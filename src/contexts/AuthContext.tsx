@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 
-type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
+export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
 interface AuthContextType {
   session: Session | null;
@@ -16,7 +16,20 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Khởi tạo context với giá trị mặc định AN TOÀN TUYỆT ĐỐI
+const defaultContextValue: AuthContextType = {
+  session: null,
+  user: null,
+  role: 'viewer',
+  loading: true,
+  configured: false,
+  isAdmin: false,
+  canManage: false,
+  canEdit: false,
+  signOut: async () => {}, // Hàm rỗng an toàn, chống lỗi "not a function"
+};
+
+const AuthContext = createContext<AuthContextType>(defaultContextValue);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -25,109 +38,152 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
 
-  useEffect(() => {
+  // Tách hàm lấy Role ra riêng và bọc bằng useCallback để tái sử dụng an toàn
+  const fetchAndSetRole = useCallback(async (userId: string) => {
     const supabase = getSupabase();
+    if (!supabase) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .single();
+        
+      if (!error && data?.role) {
+        setRole(data.role as UserRole);
+      } else {
+        setRole('viewer'); // Nếu lỗi, ép về viewer cho an toàn
+      }
+    } catch (e) {
+      console.error('Lỗi khi lấy quyền:', e);
+      setRole('viewer');
+    }
+  }, []);
+
+  // Effect 1: Khởi tạo phiên đăng nhập ban đầu
+  useEffect(() => {
+    let mounted = true;
+    const supabase = getSupabase();
+    
     if (!supabase) {
-      setLoading(false);
+      if (mounted) {
+        setConfigured(false);
+        setLoading(false);
+      }
       return;
     }
+
     setConfigured(true);
 
-    const fetchLiveRole = async (userId: string) => {
+    const initializeAuth = async () => {
       try {
-        const { data, error } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId)
-          .single();
-        if (!error && data && data.role) {
-           setRole(data.role as UserRole);
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        
+        if (mounted) {
+          setSession(initialSession);
+          setUser(initialSession?.user ?? null);
+          
+          if (initialSession?.user) {
+            await fetchAndSetRole(initialSession.user.id);
+          } else {
+            setRole('viewer');
+          }
         }
-      } catch (e) {
-        console.error('Lỗi khi lấy quyền:', e);
+      } catch (error) {
+        console.error('Lỗi khởi tạo Auth:', error);
+      } finally {
+        if (mounted) setLoading(false);
       }
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchLiveRole(session.user.id).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
+    initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchLiveRole(session.user.id);
+    // Lắng nghe sự kiện đăng nhập/đăng xuất
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      if (!mounted) return;
+      
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
+      
+      if (newSession?.user) {
+        await fetchAndSetRole(newSession.user.id);
       } else {
         setRole('viewer');
       }
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchAndSetRole]);
 
-  // Lắng nghe Realtime (Đã Fix an toàn 100%)
+  // Effect 2: Lắng nghe thay đổi quyền Realtime (Chống lỗi undefined 100%)
   useEffect(() => {
+    let mounted = true;
     const supabase = getSupabase();
-    if (!supabase || !user) return;
+    
+    if (!supabase || !user?.id) return;
 
+    const channelName = `role-update-${user.id}`;
+    
     const roleSubscription = supabase
-      .channel(`role-update-${user.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        () => {
-          // Bỏ qua payload, tự động gọi lại DB để lấy quyền mới nhất
-          // Cách này tránh hoàn toàn lỗi undefined
-          supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', user.id)
-            .single()
-            .then(({ data, error }) => {
-              if (!error && data && data.role) {
-                setRole(data.role as UserRole);
-              }
-            })
-            .catch(console.error);
-            
-          // Ép làm mới Token
-          supabase.auth.refreshSession().catch(console.error);
+        async (payload) => {
+          if (!mounted) return;
+          
+          try {
+            // Cách an toàn nhất: Bỏ qua payload, chủ động gọi lại Database
+            await fetchAndSetRole(user.id);
+            await supabase.auth.refreshSession();
+          } catch (error) {
+            console.error('Lỗi khi xử lý Realtime:', error);
+          }
         }
       )
       .subscribe();
 
     return () => {
+      mounted = false;
       supabase.removeChannel(roleSubscription);
     };
-  }, [user?.id]);
+  }, [user?.id, fetchAndSetRole]);
 
   const signOut = async () => {
     const supabase = getSupabase();
     if (supabase) {
-      await supabase.auth.signOut();
-      setRole('viewer');
+      setLoading(true);
+      try {
+        await supabase.auth.signOut();
+      } finally {
+        setSession(null);
+        setUser(null);
+        setRole('viewer');
+        setLoading(false);
+      }
     }
   };
 
+  // Giá trị truyền xuống Provider
+  const contextValue: AuthContextType = {
+    session,
+    user,
+    role,
+    loading,
+    configured,
+    isAdmin: role === 'admin',
+    canManage: role === 'admin' || role === 'manager',
+    canEdit: role === 'admin' || role === 'manager' || role === 'member',
+    signOut
+  };
+
   return (
-    <AuthContext.Provider value={{
-      session,
-      user,
-      role,
-      loading,
-      configured,
-      isAdmin: role === 'admin',
-      canManage: ['admin', 'manager'].includes(role),
-      canEdit: ['admin', 'manager', 'member'].includes(role),
-      signOut
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
@@ -135,8 +191,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+  if (!context) {
+    // Không bao giờ văng lỗi Error rỗng nữa vì đã có defaultContextValue
+    return defaultContextValue;
   }
   return context;
 };
