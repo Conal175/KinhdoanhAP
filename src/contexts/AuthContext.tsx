@@ -25,7 +25,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
 
-  // 1. Quản lý đăng nhập và lấy quyền Trực tiếp từ Database
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) {
@@ -34,7 +33,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setConfigured(true);
 
-    // Hàm quét thẳng vào Database để lấy quyền chuẩn nhất
     const fetchLiveRole = async (userId: string) => {
       try {
         const { data } = await supabase
@@ -48,7 +46,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    // Khởi tạo phiên
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -59,7 +56,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // Lắng nghe trạng thái đăng nhập
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -74,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Kích hoạt tính năng Realtime (Cập nhật quyền ngay lập tức không cần tải lại trang)
+  // Lắng nghe Realtime đã được bổ sung chốt an toàn
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user) return;
@@ -85,9 +81,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
         (payload) => {
-          // Cập nhật giao diện lập tức
-          setRole(payload.new.role as UserRole);
-          // Ép Supabase làm mới Token ngầm bên dưới
+          // CHỐT CHẶN AN TOÀN: Chỉ cập nhật nếu payload thực sự có dữ liệu
+          if (payload && payload.new && payload.new.role) {
+            setRole(payload.new.role as UserRole);
+          } else {
+            // Nếu payload bị rỗng do Supabase ẩn đi, ta sẽ chủ động gọi lại Database để lấy
+            supabase.from('user_roles').select('role').eq('user_id', user.id).single()
+              .then(({ data }) => {
+                if (data) setRole(data.role as UserRole);
+              });
+          }
+          // Ép làm mới Token
           supabase.auth.refreshSession();
         }
       )
