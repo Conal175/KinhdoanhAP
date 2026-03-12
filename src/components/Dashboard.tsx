@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import React from 'react';
 import type { Project, DailyLog, ActionPhase } from '../types';
-import { getDailyLogs, getActionPhases } from '../store';
+import { useSyncData } from '../store';
 import { 
   TrendingUp, 
   BarChart3, 
@@ -14,7 +14,8 @@ import {
   Eye,
   MousePointer,
   Receipt,
-  DollarSign
+  DollarSign,
+  Loader2
 } from 'lucide-react';
 
 interface Props {
@@ -38,8 +39,17 @@ const calculateCR = (orders: number, messages: number) => {
 };
 
 export function Dashboard({ project }: Props) {
-  const [logs] = useState<DailyLog[]>(() => getDailyLogs(project.id));
-  const [actionPlan] = useState<ActionPhase[]>(() => getActionPhases(project.id));
+  const { data: logs, loading: logsLoading } = useSyncData<DailyLog>(project.id, 'dailyLogs', []);
+  const { data: actionPlan, loading: planLoading } = useSyncData<ActionPhase>(project.id, 'actionPhases', []);
+
+  if (logsLoading || planLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-gray-500">
+        <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-500" />
+        <p>Đang tải dữ liệu tổng quan dự án...</p>
+      </div>
+    );
+  }
 
   const allTasks = actionPlan.flatMap(phase => phase.subPhases.flatMap(sp => sp.tasks));
   const totalTasks = allTasks.length;
@@ -112,7 +122,7 @@ export function Dashboard({ project }: Props) {
         </div>
       </div>
 
-      {/* TOP 3 KPI CARDS: Doanh số, Chi phí QC, CPO */}
+      {/* TOP 3 KPI CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-gradient-to-br from-emerald-500 to-green-600 rounded-2xl p-6 text-white shadow-lg">
           <div className="flex items-center justify-between mb-2">
@@ -158,7 +168,7 @@ export function Dashboard({ project }: Props) {
         </div>
       </div>
 
-      {/* Stats Cards - Row 2: Other metrics */}
+      {/* Stats Cards - Row 2 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3">
