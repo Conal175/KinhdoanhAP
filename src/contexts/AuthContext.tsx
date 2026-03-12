@@ -35,12 +35,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const fetchLiveRole = async (userId: string) => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', userId)
           .single();
-        if (data) setRole(data.role as UserRole);
+        if (!error && data && data.role) {
+           setRole(data.role as UserRole);
+        }
       } catch (e) {
         console.error('Lỗi khi lấy quyền:', e);
       }
@@ -70,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Lắng nghe Realtime đã được bổ sung chốt an toàn
+  // Lắng nghe Realtime (Đã Fix an toàn 100%)
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user) return;
@@ -80,19 +82,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        (payload) => {
-          // CHỐT CHẶN AN TOÀN: Chỉ cập nhật nếu payload thực sự có dữ liệu
-          if (payload && payload.new && payload.new.role) {
-            setRole(payload.new.role as UserRole);
-          } else {
-            // Nếu payload bị rỗng do Supabase ẩn đi, ta sẽ chủ động gọi lại Database để lấy
-            supabase.from('user_roles').select('role').eq('user_id', user.id).single()
-              .then(({ data }) => {
-                if (data) setRole(data.role as UserRole);
-              });
-          }
+        () => {
+          // Bỏ qua payload, tự động gọi lại DB để lấy quyền mới nhất
+          // Cách này tránh hoàn toàn lỗi undefined
+          supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id)
+            .single()
+            .then(({ data, error }) => {
+              if (!error && data && data.role) {
+                setRole(data.role as UserRole);
+              }
+            })
+            .catch(console.error);
+            
           // Ép làm mới Token
-          supabase.auth.refreshSession();
+          supabase.auth.refreshSession().catch(console.error);
         }
       )
       .subscribe();
