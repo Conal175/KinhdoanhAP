@@ -74,7 +74,6 @@ export interface FAQ {
   answer: string;
 }
 
-// Keep for backward compat but no longer used in strategy
 export interface CustomerPersona {
   id: string;
   projectId: string;
@@ -115,11 +114,6 @@ export interface DailyLog {
   messages: number; // Số tin nhắn mới (New Messages)
   orders: number; // Số đơn hàng chốt thành công (Orders)
   revenue: number; // Doanh thu tạm tính (Revenue)
-  // Các trường tự động tính:
-  // CTR = (clicks / impressions) * 100
-  // CPA = spend / messages
-  // CPO = spend / orders
-  // CR = (orders / messages) * 100
   issues: string; // Vấn đề phát sinh
   optimizations: string; // Hành động tối ưu
 }
@@ -133,12 +127,13 @@ export interface FanpageCheckItem {
   subItems?: { id: string; label: string; checked: boolean }[];
 }
 
+// Đã bổ sung createdAt và items để sửa lỗi Vercel
 export interface Fanpage {
   id: string;
   projectId: string;
   name: string;
   url: string;
-  createdAt: string;
+  createdAt: string; 
   items: FanpageCheckItem[];
 }
 
