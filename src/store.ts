@@ -1,3 +1,4 @@
+import { getSupabase } from './lib/supabase';
 import type { Project, Task, ActionPhase, ProductAdvantage, CustomerInfo, PainPoint, FAQ, Competitor, DailyLog, Fanpage, ContentAd, MediaFolder } from './types';
 
 const KEYS = {
@@ -28,9 +29,74 @@ function save<T>(key: string, data: T[]) {
   localStorage.setItem(key, JSON.stringify(data));
 }
 
-// Projects
-export const getProjects = (): Project[] => load(KEYS.projects);
-export const saveProjects = (p: Project[]) => save(KEYS.projects, p);
+// ==========================================
+// SUPABASE: PROJECTS (Đã đồng bộ lên Cloud)
+// ==========================================
+export const fetchProjects = async (): Promise<Project[]> => {
+  const supabase = getSupabase();
+  if (!supabase) return load(KEYS.projects);
+  
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .order('created_at', { ascending: false });
+    
+  if (error) {
+    console.error('Lỗi tải dự án:', error);
+    return load(KEYS.projects);
+  }
+  
+  return data.map(p => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+    createdAt: p.created_at
+  }));
+};
+
+export const insertProject = async (project: Project): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    const all = load<Project>(KEYS.projects);
+    save(KEYS.projects, [project, ...all]);
+    return true;
+  }
+
+  const { error } = await supabase
+    .from('projects')
+    .insert([{
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      created_at: project.createdAt
+    }]);
+
+  if (error) {
+    console.error('Lỗi tạo dự án:', error);
+    return false;
+  }
+  return true;
+};
+
+export const removeProject = async (id: string): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    const all = load<Project>(KEYS.projects);
+    save(KEYS.projects, all.filter(p => p.id !== id));
+    return true;
+  }
+
+  const { error } = await supabase.from('projects').delete().eq('id', id);
+  if (error) {
+    console.error('Lỗi xóa dự án:', error);
+    return false;
+  }
+  return true;
+};
+
+// ==========================================
+// LOCAL STORAGE: CÁC DỮ LIỆU KHÁC (Tạm giữ)
+// ==========================================
 
 // Tasks
 export const getTasks = (projectId: string): Task[] =>
@@ -106,7 +172,7 @@ export const saveContentAds = (pid: string, items: ContentAd[]) => {
   save(KEYS.contentAds, [...all, ...items]);
 };
 
-// Action Phases (new Action Plan structure)
+// Action Phases
 export const getActionPhases = (pid: string): ActionPhase[] => {
   const key = `${KEYS.actionPhases}_${pid}`;
   try {
