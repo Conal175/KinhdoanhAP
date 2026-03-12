@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { Project } from './types';
-import { getProjects, saveProjects } from './store';
+import { fetchProjects, insertProject, removeProject } from './store';
 import { v4 as uuid } from 'uuid';
 import { useAuth } from './contexts/AuthContext';
 import { SupabaseSetup } from './components/auth/SupabaseSetup';
@@ -14,28 +14,9 @@ import { CompetitorStrategy } from './components/CompetitorStrategy';
 import DailyReport from './components/DailyReport';
 import { MediaResources } from './components/MediaResources';
 import {
-  LayoutDashboard,
-  ListTodo,
-  Lightbulb,
-  BarChart3,
-  Image,
-  Plus,
-  ArrowLeft,
-  FolderOpen,
-  Trash2,
-  Menu,
-  X,
-  ChevronDown,
-  ChevronRight,
-  Package,
-  Users,
-  Swords,
-  LogOut,
-  UserCog,
-  Shield,
-  ShieldCheck,
-  Crown,
-  Eye,
+  LayoutDashboard, ListTodo, Lightbulb, BarChart3, Image, Plus,
+  ArrowLeft, FolderOpen, Trash2, Menu, X, ChevronDown, ChevronRight,
+  Package, Users, Swords, LogOut, UserCog, Shield, ShieldCheck, Crown, Eye,
 } from 'lucide-react';
 
 type TabKey = 'dashboard' | 'action-plan' | 'strategy-products' | 'strategy-customers' | 'strategy-competitors' | 'daily-report' | 'media' | 'admin';
@@ -51,12 +32,10 @@ export function App() {
   const auth = useAuth();
   const [configVersion, setConfigVersion] = useState(0);
 
-  // If Supabase not configured, show setup
   if (!auth.configured) {
     return <SupabaseSetup onComplete={() => setConfigVersion(v => v + 1)} key={configVersion} />;
   }
 
-  // If loading
   if (auth.loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 flex items-center justify-center">
@@ -68,18 +47,17 @@ export function App() {
     );
   }
 
-  // If not logged in, show login
   if (!auth.user) {
     return <LoginPage onResetConfig={() => setConfigVersion(v => v + 1)} />;
   }
 
-  // Logged in - show main app
   return <MainApp />;
 }
 
 function MainApp() {
   const auth = useAuth();
-  const [projects, setProjects] = useState<Project[]>(() => getProjects());
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -88,29 +66,44 @@ function MainApp() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', description: '' });
 
-  const persist = useCallback((updated: Project[]) => {
-    setProjects(updated);
-    saveProjects(updated);
+  // Load Projects from Supabase on init
+  useEffect(() => {
+    fetchProjects().then(data => {
+      setProjects(data);
+      setLoadingProjects(false);
+    });
   }, []);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!createForm.name.trim()) return;
     const newProject: Project = {
       id: uuid(),
-      ...createForm,
+      name: createForm.name,
+      description: createForm.description,
       createdAt: new Date().toISOString(),
     };
-    persist([...projects, newProject]);
-    setCreateForm({ name: '', description: '' });
-    setShowCreateForm(false);
-    setActiveProjectId(newProject.id);
-    setActiveTab('dashboard');
+    
+    const success = await insertProject(newProject);
+    if (success) {
+      setProjects([newProject, ...projects]);
+      setCreateForm({ name: '', description: '' });
+      setShowCreateForm(false);
+      setActiveProjectId(newProject.id);
+      setActiveTab('dashboard');
+    } else {
+      alert('Có lỗi xảy ra khi tạo dự án!');
+    }
   };
 
-  const deleteProject = (id: string) => {
+  const deleteProject = async (id: string) => {
     if (!confirm('Bạn có chắc muốn xóa dự án này?')) return;
-    persist(projects.filter(p => p.id !== id));
-    if (activeProjectId === id) setActiveProjectId(null);
+    const success = await removeProject(id);
+    if (success) {
+      setProjects(projects.filter(p => p.id !== id));
+      if (activeProjectId === id) setActiveProjectId(null);
+    } else {
+      alert('Có lỗi xảy ra khi xóa dự án. Bạn có thể không đủ quyền!');
+    }
   };
 
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -140,6 +133,15 @@ function MainApp() {
   const userEmail = auth.user?.email || '';
   const userName = auth.user?.user_metadata?.full_name || userEmail.split('@')[0];
 
+  if (loadingProjects) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-gray-500 font-medium animate-pulse">Đang đồng bộ dữ liệu hệ thống...</p>
+      </div>
+    );
+  }
+
   // ======= PROJECT LIST VIEW =======
   if (!activeProject) {
     return (
@@ -157,7 +159,6 @@ function MainApp() {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* Admin Button */}
               {auth.isAdmin && (
                 <button
                   onClick={() => { setActiveProjectId(null); setActiveTab('admin'); }}
@@ -167,7 +168,6 @@ function MainApp() {
                 </button>
               )}
 
-              {/* Create Button */}
               {auth.canManage && (
                 <button
                   onClick={() => setShowCreateForm(true)}
@@ -177,7 +177,6 @@ function MainApp() {
                 </button>
               )}
 
-              {/* User Avatar */}
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
@@ -242,7 +241,6 @@ function MainApp() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-          {/* Admin Panel */}
           {activeTab === 'admin' && auth.isAdmin && (
             <div>
               <button
@@ -257,7 +255,6 @@ function MainApp() {
 
           {activeTab !== 'admin' && (
             <>
-              {/* Create Form Modal */}
               {showCreateForm && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateForm(false)}>
                   <div className="bg-white rounded-2xl p-8 w-full max-w-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -302,7 +299,6 @@ function MainApp() {
                 </div>
               )}
 
-              {/* Project Cards */}
               {projects.length === 0 ? (
                 <div className="text-center py-24">
                   <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -378,12 +374,10 @@ function MainApp() {
   // ======= PROJECT DETAIL VIEW =======
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed lg:sticky top-0 left-0 h-screen w-72 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-5 border-b border-gray-100">
           <button
@@ -399,7 +393,6 @@ function MainApp() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {/* Dashboard */}
           <button
             onClick={() => handleTabClick('dashboard')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
@@ -407,7 +400,6 @@ function MainApp() {
             <LayoutDashboard className="w-5 h-5" /> Dashboard
           </button>
 
-          {/* Action Plan */}
           <button
             onClick={() => handleTabClick('action-plan')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'action-plan' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
@@ -415,7 +407,6 @@ function MainApp() {
             <ListTodo className="w-5 h-5" /> Action Plan
           </button>
 
-          {/* Strategy with submenu */}
           <div>
             <button
               onClick={() => setStrategyExpanded(!strategyExpanded)}
@@ -450,7 +441,6 @@ function MainApp() {
             )}
           </div>
 
-          {/* Daily Report */}
           <button
             onClick={() => handleTabClick('daily-report')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'daily-report' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
@@ -458,7 +448,6 @@ function MainApp() {
             <BarChart3 className="w-5 h-5" /> Báo Cáo
           </button>
 
-          {/* Media */}
           <button
             onClick={() => handleTabClick('media')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'media' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
@@ -466,7 +455,6 @@ function MainApp() {
             <Image className="w-5 h-5" /> Media
           </button>
 
-          {/* Admin - only for admin */}
           {auth.isAdmin && (
             <>
               <div className="my-3 border-t border-gray-100" />
@@ -480,7 +468,6 @@ function MainApp() {
           )}
         </nav>
 
-        {/* User section at bottom */}
         <div className="p-3 border-t border-gray-100">
           <div className="relative">
             <button
@@ -513,10 +500,7 @@ function MainApp() {
                   </div>
                   <div className="p-1.5">
                     <button
-                      onClick={() => {
-                        setShowUserMenu(false);
-                        auth.signOut();
-                      }}
+                      onClick={() => { setShowUserMenu(false); auth.signOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors"
                     >
                       <LogOut className="w-4 h-4" /> Đăng xuất
@@ -527,7 +511,6 @@ function MainApp() {
             )}
           </div>
 
-          {/* Viewer warning */}
           {!auth.canEdit && (
             <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-xs text-amber-700 flex items-center gap-1">
@@ -538,9 +521,7 @@ function MainApp() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 min-w-0">
-        {/* Top bar for mobile */}
         <header className="lg:hidden bg-white border-b border-gray-200 sticky top-0 z-30 px-4 py-3 flex items-center gap-3">
           <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-gray-100 rounded-lg">
             <Menu className="w-5 h-5 text-gray-600" />
@@ -562,7 +543,6 @@ function MainApp() {
           </button>
         </header>
 
-        {/* Content */}
         <main className="p-4 sm:p-6 lg:p-8 max-w-7xl">
           {activeTab === 'dashboard' && <Dashboard project={activeProject} />}
           {activeTab === 'action-plan' && <ActionPlan project={activeProject} />}
