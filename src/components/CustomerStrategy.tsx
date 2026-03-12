@@ -1,514 +1,168 @@
 import { useState } from 'react';
 import type { CustomerInfo, PainPoint, FAQ } from '../types';
-import { getCustomerInfos, saveCustomerInfos, getPainPoints, savePainPoints, getFAQs, saveFAQs } from '../store';
+import { useSyncData } from '../store';
 import { v4 as uuid } from 'uuid';
-import { Plus, Edit2, Trash2, Save, X, Users, MessageCircleQuestion, HeartCrack, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, MessageCircleQuestion, HeartCrack, ArrowLeft, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 
-interface Props {
-  projectId: string;
-  onBack: () => void;
-}
+interface Props { projectId: string; onBack: () => void; }
 
 export function CustomerStrategy({ projectId, onBack }: Props) {
-  // Data states
-  const [customerInfos, setCustomerInfos] = useState<CustomerInfo[]>(() => getCustomerInfos(projectId));
-  const [painPoints, setPainPoints] = useState<PainPoint[]>(() => getPainPoints(projectId));
-  const [faqs, setFAQs] = useState<FAQ[]>(() => getFAQs(projectId));
+  const { data: customerInfos, syncData: setCustomerInfos, loading: load1 } = useSyncData<CustomerInfo>(projectId, 'customerInfos', []);
+  const { data: painPoints, syncData: setPainPoints, loading: load2 } = useSyncData<PainPoint>(projectId, 'painPoints', []);
+  const { data: faqs, syncData: setFAQs, loading: load3 } = useSyncData<FAQ>(projectId, 'faqs', []);
 
-  // UI states
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['info', 'pain', 'faq']));
   const [showInfoForm, setShowInfoForm] = useState(false);
   const [showPainForm, setShowPainForm] = useState(false);
   const [showFaqForm, setShowFaqForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Forms
   const [infoForm, setInfoForm] = useState({ attribute: '', content: '', reason: '' });
   const [painForm, setPainForm] = useState({ painGroup: '', pain: '', solution: '' });
   const [faqForm, setFaqForm] = useState({ question: '', answer: '' });
 
+  if (load1 || load2 || load3) return (
+    <div className="flex flex-col items-center justify-center py-24 text-gray-500"><Loader2 className="w-8 h-8 animate-spin text-purple-500 mb-4" /><p>Đang tải dữ liệu khách hàng...</p></div>
+  );
+
   const toggleSection = (key: string) => {
     const next = new Set(expandedSections);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
+    next.has(key) ? next.delete(key) : next.add(key);
     setExpandedSections(next);
   };
 
-  // Customer Info handlers
-  const persistInfo = (data: CustomerInfo[]) => {
-    setCustomerInfos(data);
-    saveCustomerInfos(projectId, data);
-  };
-
-  const resetInfoForm = () => {
-    setInfoForm({ attribute: '', content: '', reason: '' });
-    setShowInfoForm(false);
-    setEditingId(null);
-  };
-
-  const handleSaveInfo = () => {
+  const handleSaveInfo = async () => {
     if (!infoForm.attribute.trim()) return;
-    if (editingId) {
-      persistInfo(customerInfos.map(c => c.id === editingId ? { ...c, ...infoForm } : c));
-    } else {
-      persistInfo([...customerInfos, { id: uuid(), projectId, ...infoForm }]);
-    }
-    resetInfoForm();
+    if (editingId) await setCustomerInfos(customerInfos.map(c => c.id === editingId ? { ...c, ...infoForm } : c));
+    else await setCustomerInfos([...customerInfos, { id: uuid(), projectId, ...infoForm }]);
+    setShowInfoForm(false); setEditingId(null); setInfoForm({ attribute: '', content: '', reason: '' });
   };
 
-  const handleEditInfo = (c: CustomerInfo) => {
-    setInfoForm({ attribute: c.attribute, content: c.content, reason: c.reason });
-    setEditingId(c.id);
-    setShowInfoForm(true);
-  };
-
-  const handleDeleteInfo = (id: string) => {
-    if (confirm('Xóa thông tin này?')) persistInfo(customerInfos.filter(c => c.id !== id));
-  };
-
-  // Pain Point handlers
-  const persistPain = (data: PainPoint[]) => {
-    setPainPoints(data);
-    savePainPoints(projectId, data);
-  };
-
-  const resetPainForm = () => {
-    setPainForm({ painGroup: '', pain: '', solution: '' });
-    setShowPainForm(false);
-    setEditingId(null);
-  };
-
-  const handleSavePain = () => {
+  const handleSavePain = async () => {
     if (!painForm.painGroup.trim() || !painForm.pain.trim()) return;
-    if (editingId) {
-      persistPain(painPoints.map(p => p.id === editingId ? { ...p, ...painForm } : p));
-    } else {
-      persistPain([...painPoints, { id: uuid(), projectId, ...painForm }]);
-    }
-    resetPainForm();
+    if (editingId) await setPainPoints(painPoints.map(p => p.id === editingId ? { ...p, ...painForm } : p));
+    else await setPainPoints([...painPoints, { id: uuid(), projectId, ...painForm }]);
+    setShowPainForm(false); setEditingId(null); setPainForm({ painGroup: '', pain: '', solution: '' });
   };
 
-  const handleEditPain = (p: PainPoint) => {
-    setPainForm({ painGroup: p.painGroup, pain: p.pain, solution: p.solution });
-    setEditingId(p.id);
-    setShowPainForm(true);
-  };
-
-  const handleDeletePain = (id: string) => {
-    if (confirm('Xóa nỗi đau này?')) persistPain(painPoints.filter(p => p.id !== id));
-  };
-
-  // FAQ handlers
-  const persistFaq = (data: FAQ[]) => {
-    setFAQs(data);
-    saveFAQs(projectId, data);
-  };
-
-  const resetFaqForm = () => {
-    setFaqForm({ question: '', answer: '' });
-    setShowFaqForm(false);
-    setEditingId(null);
-  };
-
-  const handleSaveFaq = () => {
+  const handleSaveFaq = async () => {
     if (!faqForm.question.trim()) return;
-    if (editingId) {
-      persistFaq(faqs.map(f => f.id === editingId ? { ...f, ...faqForm } : f));
-    } else {
-      persistFaq([...faqs, { id: uuid(), projectId, ...faqForm }]);
-    }
-    resetFaqForm();
+    if (editingId) await setFAQs(faqs.map(f => f.id === editingId ? { ...f, ...faqForm } : f));
+    else await setFAQs([...faqs, { id: uuid(), projectId, ...faqForm }]);
+    setShowFaqForm(false); setEditingId(null); setFaqForm({ question: '', answer: '' });
   };
-
-  const handleEditFaq = (f: FAQ) => {
-    setFaqForm({ question: f.question, answer: f.answer });
-    setEditingId(f.id);
-    setShowFaqForm(true);
-  };
-
-  const handleDeleteFaq = (id: string) => {
-    if (confirm('Xóa câu hỏi này?')) persistFaq(faqs.filter(f => f.id !== id));
-  };
-
-  // Group pain points by painGroup for rowspan display
-  const groupedPains = painPoints.reduce((acc, p) => {
-    if (!acc[p.painGroup]) acc[p.painGroup] = [];
-    acc[p.painGroup].push(p);
-    return acc;
-  }, {} as Record<string, PainPoint[]>);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
-        </button>
+        <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 text-gray-600" /></button>
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl flex items-center justify-center">
-            <Users className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Chân Dung Khách Hàng</h1>
-            <p className="text-sm text-gray-500">Thông tin, nỗi đau và câu hỏi thường gặp</p>
-          </div>
+          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl flex items-center justify-center"><Users className="w-6 h-6 text-white" /></div>
+          <div><h1 className="text-2xl font-bold text-gray-800">Chân Dung Khách Hàng</h1></div>
         </div>
       </div>
 
-      {/* Section 1: Customer Info */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <button
-          onClick={() => toggleSection('info')}
-          className="w-full flex items-center justify-between px-6 py-4 bg-gradient-to-r from-purple-50 to-violet-50 hover:from-purple-100 hover:to-violet-100 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <Users className="w-5 h-5 text-purple-600" />
-            <span className="font-bold text-purple-800">Bảng 1: Thông tin về đối tượng khách hàng</span>
-            <span className="bg-purple-200 text-purple-800 text-xs px-2 py-0.5 rounded-full">{customerInfos.length}</span>
-          </div>
+      {/* Info Section */}
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <button onClick={() => toggleSection('info')} className="w-full flex justify-between px-6 py-4 bg-purple-50">
+          <div className="flex items-center gap-3"><Users className="w-5 h-5 text-purple-600" /><span className="font-bold text-purple-800">Bảng 1: Thông tin đối tượng</span></div>
           {expandedSections.has('info') ? <ChevronDown className="w-5 h-5 text-purple-600" /> : <ChevronRight className="w-5 h-5 text-purple-600" />}
         </button>
-
         {expandedSections.has('info') && (
           <div className="p-4">
-            <div className="flex justify-end mb-4">
-              <button
-                onClick={() => setShowInfoForm(true)}
-                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl hover:bg-purple-700 transition-colors text-sm"
-              >
-                <Plus className="w-4 h-4" /> Thêm thông tin
-              </button>
-            </div>
-
-            {customerInfos.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                <p>Chưa có thông tin khách hàng</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-purple-100">
-                      <th className="px-4 py-3 text-left text-xs font-bold text-purple-800 uppercase w-10">#</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-purple-800 uppercase min-w-[180px]">Thông tin về đối tượng KH</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-purple-800 uppercase min-w-[200px]">Nội dung</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-purple-800 uppercase min-w-[200px]">Lý do</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-purple-800 uppercase w-24">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {customerInfos.map((c, idx) => (
-                      <tr key={c.id} className="hover:bg-purple-50/30">
-                        <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
-                        <td className="px-4 py-3 font-medium text-gray-800">{c.attribute}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700 whitespace-pre-line">{c.content || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600 whitespace-pre-line">{c.reason || '-'}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1">
-                            <button onClick={() => handleEditInfo(c)} className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg"><Edit2 className="w-4 h-4" /></button>
-                            <button onClick={() => handleDeleteInfo(c.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <button onClick={() => setShowInfoForm(true)} className="mb-4 bg-purple-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2"><Plus className="w-4 h-4"/> Thêm</button>
+            <table className="w-full text-left"><thead className="border-b"><tr className="text-sm font-bold text-purple-800"><th className="p-3">Thuộc tính</th><th className="p-3">Nội dung</th><th className="p-3">Lý do</th><th className="p-3 text-center">Thao tác</th></tr></thead>
+            <tbody>{customerInfos.map(c => (
+              <tr key={c.id} className="border-b hover:bg-purple-50/30">
+                <td className="p-3 font-medium">{c.attribute}</td><td className="p-3 text-sm">{c.content}</td><td className="p-3 text-sm">{c.reason}</td>
+                <td className="p-3 text-center">
+                  <button onClick={() => {setInfoForm(c); setEditingId(c.id); setShowInfoForm(true)}} className="p-2 text-purple-600"><Edit2 className="w-4 h-4"/></button>
+                  <button onClick={() => confirm('Xóa?') && setCustomerInfos(customerInfos.filter(x => x.id !== c.id))} className="p-2 text-red-500"><Trash2 className="w-4 h-4"/></button>
+                </td>
+              </tr>
+            ))}</tbody></table>
           </div>
         )}
       </div>
 
-      {/* Section 2: Pain Points */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <button
-          onClick={() => toggleSection('pain')}
-          className="w-full flex items-center justify-between px-6 py-4 bg-gradient-to-r from-red-50 to-rose-50 hover:from-red-100 hover:to-rose-100 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <HeartCrack className="w-5 h-5 text-red-600" />
-            <span className="font-bold text-red-800">Bảng 2: Nỗi đau của khách hàng (Pain Points)</span>
-            <span className="bg-red-200 text-red-800 text-xs px-2 py-0.5 rounded-full">{painPoints.length}</span>
-          </div>
+      {/* Pain Section */}
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <button onClick={() => toggleSection('pain')} className="w-full flex justify-between px-6 py-4 bg-red-50">
+          <div className="flex items-center gap-3"><HeartCrack className="w-5 h-5 text-red-600" /><span className="font-bold text-red-800">Bảng 2: Nỗi đau KH</span></div>
           {expandedSections.has('pain') ? <ChevronDown className="w-5 h-5 text-red-600" /> : <ChevronRight className="w-5 h-5 text-red-600" />}
         </button>
-
         {expandedSections.has('pain') && (
           <div className="p-4">
-            <div className="flex justify-end mb-4">
-              <button
-                onClick={() => setShowPainForm(true)}
-                className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-xl hover:bg-red-700 transition-colors text-sm"
-              >
-                <Plus className="w-4 h-4" /> Thêm nỗi đau
-              </button>
-            </div>
-
-            {painPoints.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <HeartCrack className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                <p>Chưa có nỗi đau nào được ghi nhận</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-red-100">
-                      <th className="px-4 py-3 text-left text-xs font-bold text-red-800 uppercase min-w-[150px]">Nhóm nỗi đau</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-red-800 uppercase min-w-[200px] bg-red-50">Nỗi đau của KH</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-green-800 uppercase min-w-[200px] bg-green-50">Giải pháp</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-red-800 uppercase w-24">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {Object.entries(groupedPains).map(([group, items]) =>
-                      items.map((p, idx) => (
-                        <tr key={p.id} className="hover:bg-red-50/30">
-                          {idx === 0 && (
-                            <td rowSpan={items.length} className="px-4 py-3 font-semibold text-gray-800 border-r border-gray-100 align-top bg-gray-50">
-                              <div className="flex items-center gap-2">
-                                <span>{group}</span>
-                                <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">{items.length}</span>
-                              </div>
-                            </td>
-                          )}
-                          <td className="px-4 py-3 text-sm text-red-700 bg-red-50/50 whitespace-pre-line">{p.pain}</td>
-                          <td className="px-4 py-3 text-sm text-green-700 bg-green-50/50 whitespace-pre-line">{p.solution || '-'}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-center gap-1">
-                              <button onClick={() => handleEditPain(p)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg"><Edit2 className="w-4 h-4" /></button>
-                              <button onClick={() => handleDeletePain(p.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <button onClick={() => setShowPainForm(true)} className="mb-4 bg-red-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2"><Plus className="w-4 h-4"/> Thêm</button>
+            <table className="w-full text-left"><thead className="border-b"><tr className="text-sm font-bold text-red-800"><th className="p-3">Nhóm</th><th className="p-3">Nỗi đau</th><th className="p-3 text-green-800">Giải pháp</th><th className="p-3 text-center">Thao tác</th></tr></thead>
+            <tbody>{painPoints.map(p => (
+              <tr key={p.id} className="border-b hover:bg-red-50/30">
+                <td className="p-3 font-medium">{p.painGroup}</td><td className="p-3 text-sm text-red-700">{p.pain}</td><td className="p-3 text-sm text-green-700">{p.solution}</td>
+                <td className="p-3 text-center">
+                  <button onClick={() => {setPainForm(p); setEditingId(p.id); setShowPainForm(true)}} className="p-2 text-red-600"><Edit2 className="w-4 h-4"/></button>
+                  <button onClick={() => confirm('Xóa?') && setPainPoints(painPoints.filter(x => x.id !== p.id))} className="p-2 text-red-500"><Trash2 className="w-4 h-4"/></button>
+                </td>
+              </tr>
+            ))}</tbody></table>
           </div>
         )}
       </div>
 
-      {/* Section 3: FAQs */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <button
-          onClick={() => toggleSection('faq')}
-          className="w-full flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <MessageCircleQuestion className="w-5 h-5 text-indigo-600" />
-            <span className="font-bold text-indigo-800">Bảng 3: Câu hỏi thường gặp (FAQ)</span>
-            <span className="bg-indigo-200 text-indigo-800 text-xs px-2 py-0.5 rounded-full">{faqs.length}</span>
-          </div>
+      {/* FAQ Section */}
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <button onClick={() => toggleSection('faq')} className="w-full flex justify-between px-6 py-4 bg-indigo-50">
+          <div className="flex items-center gap-3"><MessageCircleQuestion className="w-5 h-5 text-indigo-600" /><span className="font-bold text-indigo-800">Bảng 3: FAQ</span></div>
           {expandedSections.has('faq') ? <ChevronDown className="w-5 h-5 text-indigo-600" /> : <ChevronRight className="w-5 h-5 text-indigo-600" />}
         </button>
-
         {expandedSections.has('faq') && (
           <div className="p-4">
-            <div className="flex justify-end mb-4">
-              <button
-                onClick={() => setShowFaqForm(true)}
-                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl hover:bg-indigo-700 transition-colors text-sm"
-              >
-                <Plus className="w-4 h-4" /> Thêm câu hỏi
-              </button>
-            </div>
-
-            {faqs.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <MessageCircleQuestion className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                <p>Chưa có câu hỏi FAQ nào</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-indigo-100">
-                      <th className="px-4 py-3 text-left text-xs font-bold text-indigo-800 uppercase w-10">#</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-indigo-800 uppercase min-w-[250px]">Câu hỏi thường gặp</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-indigo-800 uppercase min-w-[300px]">Gợi ý trả lời</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-indigo-800 uppercase w-24">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {faqs.map((f, idx) => (
-                      <tr key={f.id} className="hover:bg-indigo-50/30">
-                        <td className="px-4 py-3 text-sm text-gray-500">{idx + 1}</td>
-                        <td className="px-4 py-3 font-medium text-gray-800">{f.question}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700 whitespace-pre-line">{f.answer || '-'}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1">
-                            <button onClick={() => handleEditFaq(f)} className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg"><Edit2 className="w-4 h-4" /></button>
-                            <button onClick={() => handleDeleteFaq(f.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <button onClick={() => setShowFaqForm(true)} className="mb-4 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm flex gap-2"><Plus className="w-4 h-4"/> Thêm</button>
+            <table className="w-full text-left"><thead className="border-b"><tr className="text-sm font-bold text-indigo-800"><th className="p-3">Câu hỏi</th><th className="p-3">Trả lời</th><th className="p-3 text-center">Thao tác</th></tr></thead>
+            <tbody>{faqs.map(f => (
+              <tr key={f.id} className="border-b hover:bg-indigo-50/30">
+                <td className="p-3 font-medium">{f.question}</td><td className="p-3 text-sm">{f.answer}</td>
+                <td className="p-3 text-center">
+                  <button onClick={() => {setFaqForm(f); setEditingId(f.id); setShowFaqForm(true)}} className="p-2 text-indigo-600"><Edit2 className="w-4 h-4"/></button>
+                  <button onClick={() => confirm('Xóa?') && setFAQs(faqs.filter(x => x.id !== f.id))} className="p-2 text-red-500"><Trash2 className="w-4 h-4"/></button>
+                </td>
+              </tr>
+            ))}</tbody></table>
           </div>
         )}
       </div>
 
-      {/* Stats Footer */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-gradient-to-r from-purple-500 to-violet-600 rounded-2xl p-4 text-white">
-          <p className="text-purple-100 text-xs">Thông tin KH</p>
-          <p className="text-2xl font-bold">{customerInfos.length}</p>
-        </div>
-        <div className="bg-gradient-to-r from-red-500 to-rose-600 rounded-2xl p-4 text-white">
-          <p className="text-red-100 text-xs">Nỗi đau</p>
-          <p className="text-2xl font-bold">{painPoints.length}</p>
-        </div>
-        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 rounded-2xl p-4 text-white">
-          <p className="text-indigo-100 text-xs">FAQ</p>
-          <p className="text-2xl font-bold">{faqs.length}</p>
-        </div>
-      </div>
-
-      {/* Forms Modals */}
+      {/* Forms Modal (Abridged logic) */}
       {showInfoForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={resetInfoForm}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center gap-2">
-              <Users className="w-6 h-6 text-purple-500" />
-              {editingId ? 'Sửa thông tin' : 'Thêm thông tin KH'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Thông tin về đối tượng KH *</label>
-                <input
-                  value={infoForm.attribute}
-                  onChange={e => setInfoForm({ ...infoForm, attribute: e.target.value })}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none"
-                  placeholder="VD: Độ tuổi, Giới tính, Khu vực..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Nội dung</label>
-                <textarea
-                  value={infoForm.content}
-                  onChange={e => setInfoForm({ ...infoForm, content: e.target.value })}
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none"
-                  placeholder="VD: 25-45 tuổi, Nữ chiếm 70%..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Lý do</label>
-                <textarea
-                  value={infoForm.reason}
-                  onChange={e => setInfoForm({ ...infoForm, reason: e.target.value })}
-                  rows={2}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 outline-none"
-                  placeholder="VD: Đây là nhóm có nhu cầu cao nhất..."
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={handleSaveInfo} className="flex-1 flex items-center justify-center gap-2 bg-purple-600 text-white py-3 rounded-xl hover:bg-purple-700 font-medium">
-                <Save className="w-5 h-5" /> Lưu
-              </button>
-              <button onClick={resetInfoForm} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+            <h3 className="text-xl font-bold mb-4">{editingId ? 'Sửa' : 'Thêm'} Thuộc tính KH</h3>
+            <input value={infoForm.attribute} onChange={e => setInfoForm({...infoForm, attribute: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Thuộc tính KH" />
+            <textarea value={infoForm.content} onChange={e => setInfoForm({...infoForm, content: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Nội dung" />
+            <textarea value={infoForm.reason} onChange={e => setInfoForm({...infoForm, reason: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Lý do" />
+            <div className="flex gap-2"><button onClick={handleSaveInfo} className="bg-purple-600 text-white px-4 py-2 rounded-xl">Lưu</button><button onClick={() => setShowInfoForm(false)} className="bg-gray-100 px-4 py-2 rounded-xl">Hủy</button></div>
           </div>
         </div>
       )}
 
       {showPainForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={resetPainForm}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center gap-2">
-              <HeartCrack className="w-6 h-6 text-red-500" />
-              {editingId ? 'Sửa nỗi đau' : 'Thêm nỗi đau KH'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Nhóm nỗi đau *</label>
-                <input
-                  value={painForm.painGroup}
-                  onChange={e => setPainForm({ ...painForm, painGroup: e.target.value })}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500 outline-none"
-                  placeholder="VD: Về giá cả, Về chất lượng, Về dịch vụ..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Nỗi đau của KH *</label>
-                <textarea
-                  value={painForm.pain}
-                  onChange={e => setPainForm({ ...painForm, pain: e.target.value })}
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-red-500 outline-none"
-                  placeholder="VD: Sợ mua hàng fake, lo lắng về bảo hành..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Giải pháp</label>
-                <textarea
-                  value={painForm.solution}
-                  onChange={e => setPainForm({ ...painForm, solution: e.target.value })}
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-green-500 outline-none"
-                  placeholder="VD: Cam kết đổi trả 30 ngày, bảo hành 5 năm..."
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={handleSavePain} className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white py-3 rounded-xl hover:bg-red-700 font-medium">
-                <Save className="w-5 h-5" /> Lưu
-              </button>
-              <button onClick={resetPainForm} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+            <h3 className="text-xl font-bold mb-4">{editingId ? 'Sửa' : 'Thêm'} Nỗi đau</h3>
+            <input value={painForm.painGroup} onChange={e => setPainForm({...painForm, painGroup: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Nhóm nỗi đau" />
+            <textarea value={painForm.pain} onChange={e => setPainForm({...painForm, pain: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Nỗi đau" />
+            <textarea value={painForm.solution} onChange={e => setPainForm({...painForm, solution: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Giải pháp" />
+            <div className="flex gap-2"><button onClick={handleSavePain} className="bg-red-600 text-white px-4 py-2 rounded-xl">Lưu</button><button onClick={() => setShowPainForm(false)} className="bg-gray-100 px-4 py-2 rounded-xl">Hủy</button></div>
           </div>
         </div>
       )}
 
       {showFaqForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={resetFaqForm}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-xl font-bold text-gray-800 mb-5 flex items-center gap-2">
-              <MessageCircleQuestion className="w-6 h-6 text-indigo-500" />
-              {editingId ? 'Sửa FAQ' : 'Thêm câu hỏi FAQ'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Câu hỏi thường gặp *</label>
-                <textarea
-                  value={faqForm.question}
-                  onChange={e => setFaqForm({ ...faqForm, question: e.target.value })}
-                  rows={2}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="VD: Máy bơm có bảo hành không?"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Gợi ý trả lời</label>
-                <textarea
-                  value={faqForm.answer}
-                  onChange={e => setFaqForm({ ...faqForm, answer: e.target.value })}
-                  rows={4}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="VD: Dạ có ạ! Shop bảo hành 5 năm, đổi mới trong 30 ngày đầu..."
-                />
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={handleSaveFaq} className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white py-3 rounded-xl hover:bg-indigo-700 font-medium">
-                <Save className="w-5 h-5" /> Lưu
-              </button>
-              <button onClick={resetFaqForm} className="px-6 py-3 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+            <h3 className="text-xl font-bold mb-4">{editingId ? 'Sửa' : 'Thêm'} FAQ</h3>
+            <textarea value={faqForm.question} onChange={e => setFaqForm({...faqForm, question: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Câu hỏi" />
+            <textarea value={faqForm.answer} onChange={e => setFaqForm({...faqForm, answer: e.target.value})} className="w-full border p-3 rounded-xl mb-3" placeholder="Trả lời" />
+            <div className="flex gap-2"><button onClick={handleSaveFaq} className="bg-indigo-600 text-white px-4 py-2 rounded-xl">Lưu</button><button onClick={() => setShowFaqForm(false)} className="bg-gray-100 px-4 py-2 rounded-xl">Hủy</button></div>
           </div>
         </div>
       )}
