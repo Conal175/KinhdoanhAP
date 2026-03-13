@@ -66,6 +66,7 @@ function MainApp() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', description: '' });
 
+  // Load Projects from Supabase on init
   useEffect(() => {
     fetchProjects().then(data => {
       setProjects(data);
@@ -141,9 +142,11 @@ function MainApp() {
     );
   }
 
+  // ======= PROJECT LIST VIEW =======
   if (!activeProject) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+        {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -389,88 +392,68 @@ function MainApp() {
           )}
         </div>
 
-        {/* CÁC MENU ĐƯỢC BẢO VỆ BỞI MA TRẬN QUYỀN */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {auth.checkPermission('dashboard', 'view') && (
-            <button
-              onClick={() => handleTabClick('dashboard')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              <LayoutDashboard className="w-5 h-5" /> Dashboard
-            </button>
-          )}
+          <button
+            onClick={() => handleTabClick('dashboard')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <LayoutDashboard className="w-5 h-5" /> Dashboard
+          </button>
 
-          {auth.checkPermission('action_plan', 'view') && (
-            <button
-              onClick={() => handleTabClick('action-plan')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'action-plan' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              <ListTodo className="w-5 h-5" /> Action Plan
-            </button>
-          )}
+          <button
+            onClick={() => handleTabClick('action-plan')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'action-plan' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <ListTodo className="w-5 h-5" /> Action Plan
+          </button>
 
-          {/* Chỉ hiện Folder Chiến Lược nếu được phép xem ít nhất 1 trang con */}
-          {(auth.checkPermission('strategy_product', 'view') || 
-            auth.checkPermission('strategy_customer', 'view') || 
-            auth.checkPermission('competitors', 'view')) && (
-            <div>
-              <button
-                onClick={() => setStrategyExpanded(!strategyExpanded)}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${isStrategyTab ? 'bg-yellow-50 text-yellow-700' : 'text-gray-600 hover:bg-gray-50'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <Lightbulb className="w-5 h-5" /> Chiến Lược
-                </div>
-                {strategyExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </button>
-              {strategyExpanded && (
-                <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
-                  {auth.checkPermission('strategy_product', 'view') && (
-                    <button
-                      onClick={() => handleTabClick('strategy-products')}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-products' ? 'bg-amber-50 text-amber-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
-                    >
-                      <Package className="w-4 h-4" /> Chi Tiết Sản Phẩm
-                    </button>
-                  )}
-                  {auth.checkPermission('strategy_customer', 'view') && (
-                    <button
-                      onClick={() => handleTabClick('strategy-customers')}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-customers' ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
-                    >
-                      <Users className="w-4 h-4" /> Chân Dung Khách Hàng
-                    </button>
-                  )}
-                  {auth.checkPermission('competitors', 'view') && (
-                    <button
-                      onClick={() => handleTabClick('strategy-competitors')}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-competitors' ? 'bg-red-50 text-red-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
-                    >
-                      <Swords className="w-4 h-4" /> Tình Báo Đối Thủ
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {auth.checkPermission('daily_report', 'view') && (
+          <div>
             <button
-              onClick={() => handleTabClick('daily-report')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'daily-report' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+              onClick={() => setStrategyExpanded(!strategyExpanded)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${isStrategyTab ? 'bg-yellow-50 text-yellow-700' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <BarChart3 className="w-5 h-5" /> Báo Cáo
+              <div className="flex items-center gap-3">
+                <Lightbulb className="w-5 h-5" /> Chiến Lược
+              </div>
+              {strategyExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </button>
-          )}
+            {strategyExpanded && (
+              <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
+                <button
+                  onClick={() => handleTabClick('strategy-products')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-products' ? 'bg-amber-50 text-amber-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <Package className="w-4 h-4" /> Chi Tiết Sản Phẩm
+                </button>
+                <button
+                  onClick={() => handleTabClick('strategy-customers')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-customers' ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <Users className="w-4 h-4" /> Chân Dung Khách Hàng
+                </button>
+                <button
+                  onClick={() => handleTabClick('strategy-competitors')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-competitors' ? 'bg-red-50 text-red-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <Swords className="w-4 h-4" /> Tình Báo Đối Thủ
+                </button>
+              </div>
+            )}
+          </div>
 
-          {auth.checkPermission('media', 'view') && (
-            <button
-              onClick={() => handleTabClick('media')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'media' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-            >
-              <Image className="w-5 h-5" /> Media
-            </button>
-          )}
+          <button
+            onClick={() => handleTabClick('daily-report')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'daily-report' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <BarChart3 className="w-5 h-5" /> Báo Cáo
+          </button>
+
+          <button
+            onClick={() => handleTabClick('media')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'media' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Image className="w-5 h-5" /> Media
+          </button>
 
           {auth.isAdmin && (
             <>
@@ -527,6 +510,14 @@ function MainApp() {
               </>
             )}
           </div>
+
+          {!auth.canEdit && (
+            <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs text-amber-700 flex items-center gap-1">
+                <Eye className="w-3.5 h-3.5" /> Bạn chỉ có quyền xem
+              </p>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -547,45 +538,35 @@ function MainApp() {
           }`}>
             {userName.charAt(0).toUpperCase()}
           </div>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 hover:bg-gray-100 rounded-lg lg:hidden">
+            {sidebarOpen ? <X className="w-5 h-5" /> : null}
+          </button>
         </header>
 
         <main className="p-4 sm:p-6 lg:p-8 max-w-7xl">
-          {/* RENDER NỘI DUNG (KÈM THEO KHÓA BẢO VỆ) */}
-          {activeTab === 'dashboard' && auth.checkPermission('dashboard', 'view') && <Dashboard project={activeProject} />}
-          {activeTab === 'action-plan' && auth.checkPermission('action_plan', 'view') && <ActionPlan project={activeProject} />}
-          {activeTab === 'strategy-products' && auth.checkPermission('strategy_product', 'view') && (
-            <ProductStrategy projectId={activeProject.id} onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }} />
+          {activeTab === 'dashboard' && <Dashboard project={activeProject} />}
+          {activeTab === 'action-plan' && <ActionPlan project={activeProject} />}
+          {activeTab === 'strategy-products' && (
+            <ProductStrategy
+              projectId={activeProject.id}
+              onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }}
+            />
           )}
-          {activeTab === 'strategy-customers' && auth.checkPermission('strategy_customer', 'view') && (
-            <CustomerStrategy projectId={activeProject.id} onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }} />
+          {activeTab === 'strategy-customers' && (
+            <CustomerStrategy
+              projectId={activeProject.id}
+              onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }}
+            />
           )}
-          {activeTab === 'strategy-competitors' && auth.checkPermission('competitors', 'view') && (
-            <CompetitorStrategy projectId={activeProject.id} onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }} />
+          {activeTab === 'strategy-competitors' && (
+            <CompetitorStrategy
+              projectId={activeProject.id}
+              onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }}
+            />
           )}
-          {activeTab === 'daily-report' && auth.checkPermission('daily_report', 'view') && <DailyReport projectId={activeProject.id} />}
-          {activeTab === 'media' && auth.checkPermission('media', 'view') && <MediaResources projectId={activeProject.id} />}
+          {activeTab === 'daily-report' && <DailyReport projectId={activeProject.id} />}
+          {activeTab === 'media' && <MediaResources projectId={activeProject.id} />}
           {activeTab === 'admin' && auth.isAdmin && <AdminPanel />}
-
-          {/* MÀN HÌNH CHẶN NẾU TRUY CẬP SAI QUYỀN */}
-          {((activeTab === 'dashboard' && !auth.checkPermission('dashboard', 'view')) ||
-            (activeTab === 'action-plan' && !auth.checkPermission('action_plan', 'view')) ||
-            (activeTab === 'strategy-products' && !auth.checkPermission('strategy_product', 'view')) ||
-            (activeTab === 'strategy-customers' && !auth.checkPermission('strategy_customer', 'view')) ||
-            (activeTab === 'strategy-competitors' && !auth.checkPermission('competitors', 'view')) ||
-            (activeTab === 'daily-report' && !auth.checkPermission('daily_report', 'view')) ||
-            (activeTab === 'media' && !auth.checkPermission('media', 'view'))) && 
-            activeTab !== 'admin' && (
-            <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                <Shield className="w-10 h-10 text-gray-300" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-700 mb-2">Truy Cập Bị Từ Chối</h3>
-              <p className="text-gray-500 max-w-md">
-                Tài khoản của bạn chưa được cấp quyền để xem nội dung này. 
-                <br/>Vui lòng chọn tính năng khác trên thanh Menu bên trái.
-              </p>
-            </div>
-          )}
         </main>
       </div>
     </div>
