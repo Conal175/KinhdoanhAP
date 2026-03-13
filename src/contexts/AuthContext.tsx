@@ -37,7 +37,7 @@ export function useAuth() {
   return ctx;
 }
 
-// Hàm đọc quyền dự phòng từ Token (Đề phòng Database bị trễ)
+// Lấy quyền từ Token
 function getRoleFromSession(session: Session | null): UserRole {
   try {
     if (!session?.access_token) return 'viewer';
@@ -58,17 +58,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // HÀM LẤY QUYỀN CHUẨN XÁC: Mỗi user tự lấy quyền của chính mình từ DB
+  // HÀM LẤY QUYỀN LÚC ĐĂNG NHẬP
   const syncLiveRole = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user) {
       setRole('viewer');
       return;
     }
-
-    // 1. Mặc định lấy từ Token trước cho nhanh
     let currentRole = getRoleFromSession(currentSession);
-
-    // 2. Chọc thẳng vào Database để lấy quyền chuẩn xác nhất
     const supabase = getSupabase();
     if (supabase) {
       try {
@@ -77,8 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('role')
           .eq('user_id', currentSession.user.id)
           .maybeSingle();
-
-        // Nếu lấy được dữ liệu thành công thì ghi đè quyền
         if (!error && data?.role) {
           currentRole = data.role as UserRole;
         }
@@ -86,7 +80,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Lỗi khi fetch live role:", err);
       }
     }
-
     setRole(currentRole);
   }, []);
 
@@ -103,7 +96,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
-    // Lấy Session lần đầu khởi động web
     supabase.auth.getSession()
       .then(({ data: { session: s } }) => {
         if (mounted) {
@@ -118,7 +110,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted) setLoading(false);
       });
 
-    // Lắng nghe sự kiện Đăng nhập / Đăng xuất
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       if (mounted) {
         setSession(s);
@@ -133,36 +124,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured, syncLiveRole]);
 
-  // LẮNG NGHE REALTIME (CẬP NHẬT GIAO DIỆN TỨC THÌ KHI BỊ ĐỔI QUYỀN)
+  // ==========================================
+  // LẮNG NGHE REALTIME: THÔNG BÁO VÀ ÉP ĐĂNG XUẤT
+  // ==========================================
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user?.id) return;
 
-    // Lắng nghe thay đổi của chính user này trên bảng user_roles
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        () => {
-           // Có thay đổi -> Gọi lại DB để lấy quyền mới ngay lập tức
-           syncLiveRole(session);
-           // Lấy Token mới ngầm bên dưới
-           supabase.auth.refreshSession().catch(() => {});
+        async () => {
+           // 1. Hiển thị thông báo (Trình duyệt sẽ chặn đứng màn hình để user đọc)
+           alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được thay đổi bởi Quản trị viên. Hệ thống sẽ tiến hành đăng xuất để cập nhật dữ liệu.\n\nVui lòng đăng nhập lại để tiếp tục!');
+           
+           // 2. Tiến hành xóa phiên đăng nhập ngay lập tức
+           await supabase.auth.signOut();
+           setUser(null);
+           setSession(null);
+           setRole('viewer');
+           
+           // 3. Tải lại trang web để dọn dẹp toàn bộ rác/cache trên giao diện cũ
+           window.location.reload();
         }
       )
       .subscribe();
 
-    // Bảo hiểm kép: Quét ngầm mỗi 5 giây phòng trường hợp mạng chập chờn rớt Realtime
-    const intervalId = setInterval(() => {
-      syncLiveRole(session);
-    }, 5000);
-
     return () => {
       supabase.removeChannel(roleSubscription);
-      clearInterval(intervalId);
     };
-  }, [user?.id, session, syncLiveRole]);
+  }, [user?.id]);
 
   // --- CÁC HÀM CỦA ADMIN VÀ AUTH ---
   const signIn = async (email: string, password: string) => {
