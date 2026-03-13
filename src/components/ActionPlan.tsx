@@ -1,42 +1,74 @@
 import { useState, useEffect } from 'react';
 import type { Project, ActionPhase, ActionSubPhase, ActionTask } from '../types';
 import { getActionPhases, saveActionPhases } from '../store';
-import { useAuth } from '../contexts/AuthContext';
 import {
-  ChevronDown, ChevronRight, Plus, Edit3, Trash2, UserPlus,
-  Calendar, CheckCircle2, Clock, AlertCircle, Save, X, Users, ClipboardList
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Edit3,
+  Trash2,
+  UserPlus,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Save,
+  X,
+  Users,
+  ClipboardList
 } from 'lucide-react';
 
-interface Props { project: Project; }
+interface Props {
+  project: Project;
+}
 
+// Default structure for Action Plan
 const DEFAULT_PHASES: Omit<ActionPhase, 'id'>[] = [
-  { code: '1', name: 'KHỞI TẠO VÀ LẬP KẾ HOẠCH', subPhases: [
-    { id: '', code: '1.1', name: 'Nghiên cứu khách hàng', tasks: [] },
-    { id: '', code: '1.2', name: 'Nghiên cứu đối thủ', tasks: [] },
-    { id: '', code: '1.3', name: 'Lập kế hoạch khung dự án', tasks: [] },
-    { id: '', code: '1.4', name: 'Thiết lập các tài khoản', tasks: [] },
-    { id: '', code: '1.5', name: 'Phân tích sản phẩm/dịch vụ, đối thủ và đề xuất', tasks: [] },
-  ]},
-  { code: '2', name: 'THIẾT KẾ QUẢNG CÁO', subPhases: [
-    { id: '', code: '2.1', name: 'Tiến hành tối ưu Fanpage', tasks: [] },
-    { id: '', code: '2.2', name: 'Sản xuất Media thực tế & Viết Caption', tasks: [] },
-    { id: '', code: '2.3', name: 'Đánh giá và kiểm duyệt nội dung kỹ thuật', tasks: [] },
-    { id: '', code: '2.4', name: 'Lên kịch bản Seeding (Bình luận mồi)', tasks: [] },
-    { id: '', code: '2.5', name: 'Set up đối tượng quảng cáo Facebook', tasks: [] },
-    { id: '', code: '2.6', name: 'Thiết lập kịch bản Chatbot & Hệ thống gắn thẻ (Label)', tasks: [] },
-  ]},
-  { code: '3', name: 'VẬN HÀNH QUẢNG CÁO', subPhases: [
-    { id: '', code: '3.1', name: 'Set up và vận hành chiến dịch', tasks: [] },
-    { id: '', code: '3.2', name: 'Theo dõi và tối ưu chiến dịch', tasks: [] },
-  ]}
+  {
+    code: '1',
+    name: 'KHỞI TẠO VÀ LẬP KẾ HOẠCH',
+    subPhases: [
+      { id: '', code: '1.1', name: 'Nghiên cứu khách hàng', tasks: [] },
+      { id: '', code: '1.2', name: 'Nghiên cứu đối thủ', tasks: [] },
+      { id: '', code: '1.3', name: 'Lập kế hoạch khung dự án', tasks: [] },
+      { id: '', code: '1.4', name: 'Thiết lập các tài khoản', tasks: [] },
+      { id: '', code: '1.5', name: 'Phân tích sản phẩm/dịch vụ, đối thủ và đề xuất', tasks: [] },
+    ]
+  },
+  {
+    code: '2',
+    name: 'THIẾT KẾ QUẢNG CÁO',
+    subPhases: [
+      { id: '', code: '2.1', name: 'Tiến hành tối ưu Fanpage', tasks: [] },
+      { id: '', code: '2.2', name: 'Sản xuất Media thực tế & Viết Caption', tasks: [] },
+      { id: '', code: '2.3', name: 'Đánh giá và kiểm duyệt nội dung kỹ thuật', tasks: [] },
+      { id: '', code: '2.4', name: 'Lên kịch bản Seeding (Bình luận mồi)', tasks: [] },
+      { id: '', code: '2.5', name: 'Set up đối tượng quảng cáo Facebook', tasks: [] },
+      { id: '', code: '2.6', name: 'Thiết lập kịch bản Chatbot & Hệ thống gắn thẻ (Label)', tasks: [] },
+    ]
+  },
+  {
+    code: '3',
+    name: 'VẬN HÀNH QUẢNG CÁO',
+    subPhases: [
+      { id: '', code: '3.1', name: 'Set up và vận hành chiến dịch', tasks: [] },
+      { id: '', code: '3.2', name: 'Theo dõi và tối ưu chiến dịch', tasks: [] },
+    ]
+  }
 ];
 
-function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); }
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
 
 function initializePhases(): ActionPhase[] {
   return DEFAULT_PHASES.map(phase => ({
-    ...phase, id: generateId(),
-    subPhases: phase.subPhases.map(sub => ({ ...sub, id: generateId() }))
+    ...phase,
+    id: generateId(),
+    subPhases: phase.subPhases.map(sub => ({
+      ...sub,
+      id: generateId()
+    }))
   }));
 }
 
@@ -47,15 +79,21 @@ const statusConfig = {
 };
 
 export default function ActionPlan({ project }: Props) {
-  const { checkPermission } = useAuth();
-  const canEdit = checkPermission('action_plan', 'edit');
-  const canDelete = checkPermission('action_plan', 'delete');
-
   const [phases, setPhases] = useState<ActionPhase[]>([]);
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [expandedSubPhases, setExpandedSubPhases] = useState<Set<string>>(new Set());
+  
+  // Task editing
   const [editingTask, setEditingTask] = useState<{ phaseId: string; subPhaseId: string; task: ActionTask | null } | null>(null);
-  const [taskForm, setTaskForm] = useState<Omit<ActionTask, 'id'>>({ name: '', assignee: '', deadline: '', status: 'pending', notes: '' });
+  const [taskForm, setTaskForm] = useState<Omit<ActionTask, 'id'>>({
+    name: '',
+    assignee: '',
+    deadline: '',
+    status: 'pending',
+    notes: ''
+  });
+
+  // SubPhase editing
   const [editingSubPhase, setEditingSubPhase] = useState<{ phaseId: string; subPhase: ActionSubPhase | null } | null>(null);
   const [subPhaseForm, setSubPhaseForm] = useState({ code: '', name: '' });
 
@@ -65,6 +103,7 @@ export default function ActionPlan({ project }: Props) {
       const initialized = initializePhases();
       setPhases(initialized);
       saveActionPhases(project.id, initialized);
+      // Expand all phases by default
       setExpandedPhases(new Set(initialized.map(p => p.id)));
     } else {
       setPhases(loaded);
@@ -72,42 +111,197 @@ export default function ActionPlan({ project }: Props) {
     }
   }, [project.id]);
 
-  const handleSave = (newPhases: ActionPhase[]) => { setPhases(newPhases); saveActionPhases(project.id, newPhases); };
+  const handleSave = (newPhases: ActionPhase[]) => {
+    setPhases(newPhases);
+    saveActionPhases(project.id, newPhases);
+  };
+
+  const togglePhase = (phaseId: string) => {
+    const newSet = new Set(expandedPhases);
+    if (newSet.has(phaseId)) {
+      newSet.delete(phaseId);
+    } else {
+      newSet.add(phaseId);
+    }
+    setExpandedPhases(newSet);
+  };
+
+  const toggleSubPhase = (subPhaseId: string) => {
+    const newSet = new Set(expandedSubPhases);
+    if (newSet.has(subPhaseId)) {
+      newSet.delete(subPhaseId);
+    } else {
+      newSet.add(subPhaseId);
+    }
+    setExpandedSubPhases(newSet);
+  };
+
+  // ===== SUB-PHASE CRUD =====
+  const openAddSubPhase = (phaseId: string) => {
+    const phase = phases.find(p => p.id === phaseId);
+    if (!phase) return;
+    const nextCode = `${phase.code}.${phase.subPhases.length + 1}`;
+    setSubPhaseForm({ code: nextCode, name: '' });
+    setEditingSubPhase({ phaseId, subPhase: null });
+  };
+
+  const openEditSubPhase = (phaseId: string, subPhase: ActionSubPhase) => {
+    setSubPhaseForm({ code: subPhase.code, name: subPhase.name });
+    setEditingSubPhase({ phaseId, subPhase });
+  };
 
   const saveSubPhase = () => {
-    if (!canEdit || !editingSubPhase || !subPhaseForm.name.trim()) return;
+    if (!editingSubPhase || !subPhaseForm.name.trim()) return;
+    
     const newPhases = phases.map(phase => {
       if (phase.id !== editingSubPhase.phaseId) return phase;
+      
       if (editingSubPhase.subPhase) {
-        return { ...phase, subPhases: phase.subPhases.map(sub => sub.id === editingSubPhase.subPhase!.id ? { ...sub, ...subPhaseForm } : sub) };
+        // Edit existing
+        return {
+          ...phase,
+          subPhases: phase.subPhases.map(sub =>
+            sub.id === editingSubPhase.subPhase!.id
+              ? { ...sub, code: subPhaseForm.code, name: subPhaseForm.name }
+              : sub
+          )
+        };
+      } else {
+        // Add new
+        return {
+          ...phase,
+          subPhases: [
+            ...phase.subPhases,
+            {
+              id: generateId(),
+              code: subPhaseForm.code,
+              name: subPhaseForm.name,
+              tasks: []
+            }
+          ]
+        };
       }
-      return { ...phase, subPhases: [...phase.subPhases, { id: generateId(), ...subPhaseForm, tasks: [] }] };
     });
+    
     handleSave(newPhases);
     setEditingSubPhase(null);
   };
 
+  const deleteSubPhase = (phaseId: string, subPhaseId: string) => {
+    if (!confirm('Xóa mục này và tất cả công việc bên trong?')) return;
+    const newPhases = phases.map(phase => {
+      if (phase.id !== phaseId) return phase;
+      return {
+        ...phase,
+        subPhases: phase.subPhases.filter(sub => sub.id !== subPhaseId)
+      };
+    });
+    handleSave(newPhases);
+  };
+
+  // ===== TASK CRUD =====
+  const openAddTask = (phaseId: string, subPhaseId: string) => {
+    setTaskForm({ name: '', assignee: '', deadline: '', status: 'pending', notes: '' });
+    setEditingTask({ phaseId, subPhaseId, task: null });
+  };
+
+  const openEditTask = (phaseId: string, subPhaseId: string, task: ActionTask) => {
+    setTaskForm({
+      name: task.name,
+      assignee: task.assignee,
+      deadline: task.deadline,
+      status: task.status,
+      notes: task.notes
+    });
+    setEditingTask({ phaseId, subPhaseId, task });
+  };
+
   const saveTask = () => {
-    if (!canEdit || !editingTask || !taskForm.name.trim()) return;
+    if (!editingTask || !taskForm.name.trim()) return;
+    
     const newPhases = phases.map(phase => {
       if (phase.id !== editingTask.phaseId) return phase;
-      return { ...phase, subPhases: phase.subPhases.map(sub => {
-        if (sub.id !== editingTask.subPhaseId) return sub;
-        if (editingTask.task) return { ...sub, tasks: sub.tasks.map(t => t.id === editingTask.task!.id ? { ...t, ...taskForm } : t) };
-        return { ...sub, tasks: [...sub.tasks, { id: generateId(), ...taskForm }] };
-      })};
+      return {
+        ...phase,
+        subPhases: phase.subPhases.map(sub => {
+          if (sub.id !== editingTask.subPhaseId) return sub;
+          
+          if (editingTask.task) {
+            // Edit existing
+            return {
+              ...sub,
+              tasks: sub.tasks.map(t =>
+                t.id === editingTask.task!.id
+                  ? { ...t, ...taskForm }
+                  : t
+              )
+            };
+          } else {
+            // Add new
+            return {
+              ...sub,
+              tasks: [...sub.tasks, { id: generateId(), ...taskForm }]
+            };
+          }
+        })
+      };
     });
+    
     handleSave(newPhases);
     setEditingTask(null);
   };
 
-  const stats = phases.reduce((acc, p) => {
-    p.subPhases.forEach(s => s.tasks.forEach(t => {
-      acc.total++;
-      if (t.status === 'completed') acc.completed++;
-      else if (t.status === 'in_progress') acc.inProgress++;
-      else acc.pending++;
-    }));
+  const deleteTask = (phaseId: string, subPhaseId: string, taskId: string) => {
+    if (!confirm('Xóa công việc này?')) return;
+    const newPhases = phases.map(phase => {
+      if (phase.id !== phaseId) return phase;
+      return {
+        ...phase,
+        subPhases: phase.subPhases.map(sub => {
+          if (sub.id !== subPhaseId) return sub;
+          return {
+            ...sub,
+            tasks: sub.tasks.filter(t => t.id !== taskId)
+          };
+        })
+      };
+    });
+    handleSave(newPhases);
+  };
+
+  const toggleTaskStatus = (phaseId: string, subPhaseId: string, taskId: string) => {
+    const statusOrder: ActionTask['status'][] = ['pending', 'in_progress', 'completed'];
+    const newPhases = phases.map(phase => {
+      if (phase.id !== phaseId) return phase;
+      return {
+        ...phase,
+        subPhases: phase.subPhases.map(sub => {
+          if (sub.id !== subPhaseId) return sub;
+          return {
+            ...sub,
+            tasks: sub.tasks.map(t => {
+              if (t.id !== taskId) return t;
+              const currentIdx = statusOrder.indexOf(t.status);
+              const nextIdx = (currentIdx + 1) % statusOrder.length;
+              return { ...t, status: statusOrder[nextIdx] };
+            })
+          };
+        })
+      };
+    });
+    handleSave(newPhases);
+  };
+
+  // Calculate stats
+  const stats = phases.reduce((acc, phase) => {
+    phase.subPhases.forEach(sub => {
+      sub.tasks.forEach(task => {
+        acc.total++;
+        if (task.status === 'completed') acc.completed++;
+        else if (task.status === 'in_progress') acc.inProgress++;
+        else acc.pending++;
+      });
+    });
     return acc;
   }, { total: 0, completed: 0, inProgress: 0, pending: 0 });
 
@@ -119,91 +313,405 @@ export default function ActionPlan({ project }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <ClipboardList className="w-7 h-7 text-blue-600" />
             Action Plan - Tiến Độ Dự Án
           </h2>
-          <p className="text-gray-600 mt-1 font-medium">Phân công công việc và kiểm soát deadline</p>
+          <p className="text-gray-600 mt-1">Phân công công việc và kiểm soát deadline</p>
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-           <div className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><ClipboardList className="w-5 h-5 text-gray-600" /></div>
-             <div><p className="text-2xl font-bold text-gray-900">{stats.total}</p><p className="text-sm text-gray-500">Tổng việc</p></div>
-           </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+              <ClipboardList className="w-5 h-5 text-gray-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-sm text-gray-500">Tổng công việc</p>
+            </div>
+          </div>
         </div>
-        {/* ... stats khác giữ nguyên style ... */}
+        <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-green-600">{stats.completed}</p>
+              <p className="text-sm text-gray-500">Hoàn thành</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p>
+              <p className="text-sm text-gray-500">Đang thực hiện</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-gray-500" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-600">{stats.pending}</p>
+              <p className="text-sm text-gray-500">Chờ xử lý</p>
+            </div>
+          </div>
+        </div>
       </div>
 
+      {/* Phases */}
       <div className="space-y-4">
         {phases.map((phase, phaseIdx) => {
           const colors = phaseColors[phaseIdx] || phaseColors[0];
           const isExpanded = expandedPhases.has(phase.id);
+          const phaseStats = phase.subPhases.reduce((acc, sub) => {
+            sub.tasks.forEach(t => {
+              acc.total++;
+              if (t.status === 'completed') acc.completed++;
+            });
+            return acc;
+          }, { total: 0, completed: 0 });
+
           return (
             <div key={phase.id} className={`bg-white rounded-xl border ${colors.border} shadow-sm overflow-hidden`}>
-              <div className={`${colors.bg} text-white px-5 py-4 cursor-pointer flex items-center justify-between`} onClick={() => { const n = new Set(expandedPhases); n.has(phase.id) ? n.delete(phase.id) : n.add(phase.id); setExpandedPhases(n); }}>
+              {/* Phase Header */}
+              <div
+                className={`${colors.bg} text-white px-5 py-4 cursor-pointer flex items-center justify-between`}
+                onClick={() => togglePhase(phase.id)}
+              >
                 <div className="flex items-center gap-3">
                   {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                   <span className="font-bold text-lg">{phase.code}. {phase.name}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  {canEdit && <button onClick={(e) => { e.stopPropagation(); setSubPhaseForm({ code: `${phase.code}.${phase.subPhases.length + 1}`, name: '' }); setEditingSubPhase({ phaseId: phase.id, subPhase: null }); }} className="p-1 bg-white/20 rounded hover:bg-white/30 transition-all"><Plus className="w-4 h-4" /></button>}
+                  <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+                    {phaseStats.completed}/{phaseStats.total} hoàn thành
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openAddSubPhase(phase.id); }}
+                    className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+                    title="Thêm mục con"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
+              {/* SubPhases */}
               {isExpanded && (
                 <div className="divide-y divide-gray-100">
                   {phase.subPhases.map(subPhase => {
                     const isSubExpanded = expandedSubPhases.has(subPhase.id);
+                    const subStats = {
+                      total: subPhase.tasks.length,
+                      completed: subPhase.tasks.filter(t => t.status === 'completed').length
+                    };
+
                     return (
                       <div key={subPhase.id} className={`${colors.light}`}>
-                        <div className="px-5 py-3 flex items-center justify-between hover:bg-white/50 cursor-pointer" onClick={() => { const n = new Set(expandedSubPhases); n.has(subPhase.id) ? n.delete(subPhase.id) : n.add(subPhase.id); setExpandedSubPhases(n); }}>
-                           <span className={`font-semibold ${colors.text}`}>{subPhase.code}. {subPhase.name}</span>
-                           <div className="flex gap-2">
-                             {canEdit && <button onClick={(e) => { e.stopPropagation(); setEditingTask({ phaseId: phase.id, subPhaseId: subPhase.id, task: null }); setTaskForm({name:'', assignee:'', deadline:'', status:'pending', notes:''}); }} className={`${colors.text} p-1 hover:bg-white rounded`}><UserPlus className="w-4 h-4" /></button>}
-                             {canEdit && <button onClick={(e) => { e.stopPropagation(); setSubPhaseForm({code: subPhase.code, name: subPhase.name}); setEditingSubPhase({phaseId: phase.id, subPhase}); }} className="text-gray-500 p-1 hover:bg-white rounded"><Edit3 className="w-4 h-4" /></button>}
-                             {canDelete && <button onClick={(e) => { e.stopPropagation(); if (confirm('Xóa mục này?')) handleSave(phases.map(p => p.id === phase.id ? { ...p, subPhases: p.subPhases.filter(s => s.id !== subPhase.id) } : p)); }} className="text-red-500 p-1 hover:bg-white rounded"><Trash2 className="w-4 h-4" /></button>}
-                           </div>
+                        {/* SubPhase Header */}
+                        <div
+                          className="px-5 py-3 cursor-pointer flex items-center justify-between hover:bg-white/50 transition-colors"
+                          onClick={() => toggleSubPhase(subPhase.id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            {isSubExpanded ? (
+                              <ChevronDown className={`w-4 h-4 ${colors.text}`} />
+                            ) : (
+                              <ChevronRight className={`w-4 h-4 ${colors.text}`} />
+                            )}
+                            <span className={`font-semibold ${colors.text}`}>
+                              {subPhase.code}. {subPhase.name}
+                            </span>
+                            {subStats.total > 0 && (
+                              <span className="text-xs bg-white px-2 py-0.5 rounded-full text-gray-600">
+                                {subStats.completed}/{subStats.total}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openAddTask(phase.id, subPhase.id); }}
+                              className={`p-1.5 ${colors.text} hover:bg-white rounded-lg transition-colors`}
+                              title="Thêm công việc"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openEditSubPhase(phase.id, subPhase); }}
+                              className="p-1.5 text-gray-500 hover:bg-white rounded-lg transition-colors"
+                              title="Sửa mục"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteSubPhase(phase.id, subPhase.id); }}
+                              className="p-1.5 text-red-500 hover:bg-white rounded-lg transition-colors"
+                              title="Xóa mục"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
+
+                        {/* Tasks Table */}
                         {isSubExpanded && (
-                          <div className="px-5 pb-4 overflow-x-auto">
-                            <table className="w-full text-sm border bg-white rounded-lg overflow-hidden">
-                              <thead className="bg-gray-50 border-b"><tr><th className="p-2 border">Công việc</th><th className="p-2 border">Người làm</th><th className="p-2 border">Hạn</th><th className="p-2 border text-center">Trạng thái</th><th className="p-2 border text-center">#</th></tr></thead>
-                              <tbody>
-                                {subPhase.tasks.map(t => (
-                                  <tr key={t.id} className="hover:bg-gray-50">
-                                    <td className="p-2 border font-medium text-gray-800">{t.name}</td>
-                                    <td className="p-2 border text-center"><span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs font-bold">{t.assignee}</span></td>
-                                    <td className="p-2 border text-center text-gray-500">{t.deadline}</td>
-                                    <td className="p-2 border text-center">
-                                      <button disabled={!canEdit} onClick={() => { const statusOrder: any[] = ['pending', 'in_progress', 'completed']; handleSave(phases.map(p => p.id === phase.id ? { ...p, subPhases: p.subPhases.map(s => s.id === subPhase.id ? { ...s, tasks: s.tasks.map(task => task.id === t.id ? { ...task, status: statusOrder[(statusOrder.indexOf(task.status)+1)%3]} : task)} : s)} : p)); }} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${statusConfig[t.status].color}`}><CheckCircle2 className="w-3 h-3" />{statusConfig[t.status].label}</button>
-                                    </td>
-                                    <td className="p-2 border text-center">
-                                      <div className="flex gap-1 justify-center">
-                                        {canEdit && <button onClick={() => { setTaskForm(t); setEditingTask({ phaseId: phase.id, subPhaseId: subPhase.id, task: t }); }} className="text-blue-600 p-1 hover:bg-blue-50 rounded"><Edit3 className="w-4 h-4" /></button>}
-                                        {canDelete && <button onClick={() => { if (confirm('Xóa việc này?')) handleSave(phases.map(p => p.id === phase.id ? { ...p, subPhases: p.subPhases.map(s => s.id === subPhase.id ? { ...s, tasks: s.tasks.filter(task => task.id !== t.id) } : s) } : p)); }} className="text-red-500 p-1 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="px-5 pb-4">
+                            {subPhase.tasks.length === 0 ? (
+                              <div className="bg-white rounded-lg p-4 text-center text-gray-500 border border-dashed border-gray-300">
+                                <Users className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                                <p>Chưa có công việc nào</p>
+                                <button
+                                  onClick={() => openAddTask(phase.id, subPhase.id)}
+                                  className={`mt-2 text-sm ${colors.text} hover:underline`}
+                                >
+                                  + Thêm công việc đầu tiên
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                      <th className="px-4 py-2 text-left font-medium text-gray-600">#</th>
+                                      <th className="px-4 py-2 text-left font-medium text-gray-600">Công việc</th>
+                                      <th className="px-4 py-2 text-left font-medium text-gray-600">Phân công</th>
+                                      <th className="px-4 py-2 text-left font-medium text-gray-600">Deadline</th>
+                                      <th className="px-4 py-2 text-left font-medium text-gray-600">Trạng thái</th>
+                                      <th className="px-4 py-2 text-left font-medium text-gray-600">Ghi chú</th>
+                                      <th className="px-4 py-2 text-center font-medium text-gray-600">Thao tác</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {subPhase.tasks.map((task, idx) => {
+                                      const StatusIcon = statusConfig[task.status].icon;
+                                      const isOverdue = task.deadline && new Date(task.deadline) < new Date() && task.status !== 'completed';
+                                      
+                                      return (
+                                        <tr key={task.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50' : ''}`}>
+                                          <td className="px-4 py-2 text-gray-500">{idx + 1}</td>
+                                          <td className="px-4 py-2 font-medium text-gray-900">{task.name}</td>
+                                          <td className="px-4 py-2">
+                                            {task.assignee ? (
+                                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                                                <Users className="w-3 h-3" />
+                                                {task.assignee}
+                                              </span>
+                                            ) : (
+                                              <span className="text-gray-400 italic">Chưa phân công</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-2">
+                                            {task.deadline ? (
+                                              <span className={`inline-flex items-center gap-1 text-xs ${isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                                                <Calendar className="w-3 h-3" />
+                                                {new Date(task.deadline).toLocaleDateString('vi-VN')}
+                                                {isOverdue && <span className="ml-1">(Quá hạn)</span>}
+                                              </span>
+                                            ) : (
+                                              <span className="text-gray-400">-</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-2">
+                                            <button
+                                              onClick={() => toggleTaskStatus(phase.id, subPhase.id, task.id)}
+                                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusConfig[task.status].color}`}
+                                            >
+                                              <StatusIcon className="w-3 h-3" />
+                                              {statusConfig[task.status].label}
+                                            </button>
+                                          </td>
+                                          <td className="px-4 py-2 text-gray-600 max-w-[200px] truncate" title={task.notes}>
+                                            {task.notes || '-'}
+                                          </td>
+                                          <td className="px-4 py-2">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button
+                                                onClick={() => openEditTask(phase.id, subPhase.id, task)}
+                                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                                              >
+                                                <Edit3 className="w-4 h-4" />
+                                              </button>
+                                              <button
+                                                onClick={() => deleteTask(phase.id, subPhase.id, task.id)}
+                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                                              >
+                                                <Trash2 className="w-4 h-4" />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     );
                   })}
+
+                  {phase.subPhases.length === 0 && (
+                    <div className="px-5 py-8 text-center text-gray-500">
+                      <p>Chưa có mục con nào</p>
+                      <button
+                        onClick={() => openAddSubPhase(phase.id)}
+                        className={`mt-2 ${colors.text} hover:underline`}
+                      >
+                        + Thêm mục con đầu tiên
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
       </div>
-      {/* Modals Form - Giữ nguyên logic giao diện và icon Save/X của bạn */}
+
+      {/* Modal: Add/Edit SubPhase */}
+      {editingSubPhase && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              {editingSubPhase.subPhase ? 'Sửa mục' : 'Thêm mục mới'}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mã số</label>
+                <input
+                  type="text"
+                  value={subPhaseForm.code}
+                  onChange={(e) => setSubPhaseForm({ ...subPhaseForm, code: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="VD: 1.6"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên mục *</label>
+                <input
+                  type="text"
+                  value={subPhaseForm.name}
+                  onChange={(e) => setSubPhaseForm({ ...subPhaseForm, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="VD: Đánh giá hiệu quả chiến dịch"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingSubPhase(null)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4 inline mr-1" /> Hủy
+              </button>
+              <button
+                onClick={saveSubPhase}
+                disabled={!subPhaseForm.name.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Save className="w-4 h-4 inline mr-1" /> Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add/Edit Task */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              {editingTask.task ? 'Sửa công việc' : 'Thêm công việc mới'}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên công việc *</label>
+                <input
+                  type="text"
+                  value={taskForm.name}
+                  onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Nhập tên công việc"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phân công cho</label>
+                  <input
+                    type="text"
+                    value={taskForm.assignee}
+                    onChange={(e) => setTaskForm({ ...taskForm, assignee: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Tên người thực hiện"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+                  <input
+                    type="date"
+                    value={taskForm.deadline}
+                    onChange={(e) => setTaskForm({ ...taskForm, deadline: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
+                <select
+                  value={taskForm.status}
+                  onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value as ActionTask['status'] })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="pending">Chờ xử lý</option>
+                  <option value="in_progress">Đang thực hiện</option>
+                  <option value="completed">Hoàn thành</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú</label>
+                <textarea
+                  value={taskForm.notes}
+                  onChange={(e) => setTaskForm({ ...taskForm, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Ghi chú thêm (nếu có)"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setEditingTask(null)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4 inline mr-1" /> Hủy
+              </button>
+              <button
+                onClick={saveTask}
+                disabled={!taskForm.name.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Save className="w-4 h-4 inline mr-1" /> Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
