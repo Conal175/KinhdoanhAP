@@ -1,13 +1,16 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { getSupabase, getSupabaseConfig, decodeJWT } from '../lib/supabase';
 
 export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
+export type PermissionMatrix = Record<string, { view: boolean; edit: boolean; delete: boolean }>;
+
 export interface UserWithRole {
   user_id: string;
   email: string;
   role: UserRole;
+  permissions: PermissionMatrix;
   created_at: string;
 }
 
@@ -15,6 +18,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   role: UserRole;
+  permissions: PermissionMatrix;
   loading: boolean;
   configured: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -23,6 +27,8 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   getAllUsers: () => Promise<UserWithRole[]>;
   updateUserRole: (userId: string, newRole: UserRole) => Promise<{ error: string | null }>;
+  updateUserPermissions: (userId: string, newPermissions: PermissionMatrix) => Promise<{ error: string | null }>;
+  checkPermission: (page: string, action: 'view' | 'edit' | 'delete') => boolean;
   canEdit: boolean;
   canManage: boolean;
   isAdmin: boolean;
@@ -37,7 +43,7 @@ export function useAuth() {
   return ctx;
 }
 
-// Hàm đọc quyền dự phòng từ Token (Đề phòng Database bị trễ)
+// BẢO HIỂM 1: Đọc quyền gốc từ Token để đề phòng DB bị trống
 function getRoleFromSession(session: Session | null): UserRole {
   try {
     if (!session?.access_token) return 'viewer';
@@ -54,41 +60,63 @@ function getRoleFromSession(session: Session | null): UserRole {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [role, setRole] = useState<UserRole>('viewer');
+  const [role, _setRole] = useState<UserRole>('viewer');
+  const [permissions, _setPermissions] = useState<PermissionMatrix>({});
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // HÀM LẤY QUYỀN CHUẨN XÁC: Mỗi user tự lấy quyền của chính mình từ DB
+  const roleRef = useRef<UserRole>('viewer');
+  const permsRef = useRef<PermissionMatrix>({});
+  const isRoleSynced = useRef(false);
+
+  const setRoleData = useCallback((newRole: UserRole, newPerms: PermissionMatrix) => {
+    _setRole(newRole);
+    _setPermissions(newPerms);
+    roleRef.current = newRole;
+    permsRef.current = newPerms;
+  }, []);
+
+  const handleRoleChangedForceLogout = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được cập nhật. Hệ thống sẽ tiến hành đăng xuất để đồng bộ dữ liệu.\n\nVui lòng đăng nhập lại!');
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setRoleData('viewer', {});
+    isRoleSynced.current = false;
+    window.location.reload();
+  }, [setRoleData]);
+
+  // HÀM LẤY QUYỀN (ĐÃ FIX LỖI GIÁNG CẤP OAN)
   const syncLiveRole = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user) {
-      setRole('viewer');
+      setRoleData('viewer', {});
+      isRoleSynced.current = true;
       return;
     }
 
-    // 1. Mặc định lấy từ Token trước cho nhanh
+    // Luôn lấy Token làm gốc bảo hiểm
     let currentRole = getRoleFromSession(currentSession);
+    let currentPerms: PermissionMatrix = {};
 
-    // 2. Chọc thẳng vào Database để lấy quyền chuẩn xác nhất
     const supabase = getSupabase();
     if (supabase) {
       try {
-        const { data, error } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', currentSession.user.id)
-          .maybeSingle();
-
-        // Nếu lấy được dữ liệu thành công thì ghi đè quyền
-        if (!error && data?.role) {
+        const { data, error } = await supabase.rpc('get_my_role');
+        // Chỉ ghi đè quyền khi DB thực sự trả về dữ liệu (Fix lỗi mất quyền Admin)
+        if (!error && data && data.role) {
           currentRole = data.role as UserRole;
+          currentPerms = data.permissions || {};
         }
       } catch (err) {
         console.error("Lỗi khi fetch live role:", err);
       }
     }
-
-    setRole(currentRole);
-  }, []);
+    
+    setRoleData(currentRole, currentPerms);
+    isRoleSynced.current = true;
+  }, [setRoleData]);
 
   const refreshRole = useCallback(() => {
     syncLiveRole(session);
@@ -102,23 +130,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let mounted = true;
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      if (mounted) {
+        setSession(s);
+        setUser(s?.user ?? null);
+        syncLiveRole(s).finally(() => { if (mounted) setLoading(false); });
+      }
+    });
 
-    // Lấy Session lần đầu khởi động web
-    supabase.auth.getSession()
-      .then(({ data: { session: s } }) => {
-        if (mounted) {
-          setSession(s);
-          setUser(s?.user ?? null);
-          syncLiveRole(s).finally(() => {
-            if (mounted) setLoading(false);
-          });
-        }
-      })
-      .catch(() => {
-        if (mounted) setLoading(false);
-      });
-
-    // Lắng nghe sự kiện Đăng nhập / Đăng xuất
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       if (mounted) {
         setSession(s);
@@ -133,104 +152,86 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured, syncLiveRole]);
 
-  // LẮNG NGHE REALTIME (CẬP NHẬT GIAO DIỆN TỨC THÌ KHI BỊ ĐỔI QUYỀN)
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user?.id) return;
 
-    // Lắng nghe thay đổi của chính user này trên bảng user_roles
-    const roleSubscription = supabase
-      .channel(`role-update-${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        () => {
-           // Có thay đổi -> Gọi lại DB để lấy quyền mới ngay lập tức
-           syncLiveRole(session);
-           // Lấy Token mới ngầm bên dưới
-           supabase.auth.refreshSession().catch(() => {});
-        }
-      )
-      .subscribe();
+    const roleSubscription = supabase.channel(`role-update-${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
+        () => handleRoleChangedForceLogout()
+      ).subscribe();
 
-    // Bảo hiểm kép: Quét ngầm mỗi 5 giây phòng trường hợp mạng chập chờn rớt Realtime
-    const intervalId = setInterval(() => {
-      syncLiveRole(session);
-    }, 5000);
+    const intervalId = setInterval(async () => {
+      if (!isRoleSynced.current) return;
+      try {
+        const { data, error } = await supabase.rpc('get_my_role');
+        // Chỉ kích hoạt force logout nếu data thực sự tồn tại
+        if (!error && data && data.role) {
+          if (data.role !== roleRef.current || JSON.stringify(data.permissions || {}) !== JSON.stringify(permsRef.current)) {
+            handleRoleChangedForceLogout();
+          }
+        }
+      } catch (e) {}
+    }, 3000);
 
     return () => {
       supabase.removeChannel(roleSubscription);
       clearInterval(intervalId);
     };
-  }, [user?.id, session, syncLiveRole]);
+  }, [user?.id, handleRoleChangedForceLogout]);
 
-  // --- CÁC HÀM CỦA ADMIN VÀ AUTH ---
   const signIn = async (email: string, password: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    return { error: null };
+    const supabase = getSupabase(); if (!supabase) return { error: 'Lỗi' };
+    const { error } = await supabase.auth.signInWithPassword({ email, password }); return { error: error?.message || null };
   };
-
   const signUp = async (email: string, password: string, fullName: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
-    const { error } = await supabase.auth.signUp({
-      email, password, options: { data: { full_name: fullName } },
-    });
-    if (error) return { error: error.message };
-    return { error: null };
+    const supabase = getSupabase(); if (!supabase) return { error: 'Lỗi' };
+    const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } }}); return { error: error?.message || null };
   };
-
   const signOut = async () => {
-    const supabase = getSupabase();
-    if (supabase) await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setRole('viewer');
+    const supabase = getSupabase(); if (supabase) await supabase.auth.signOut();
+    setUser(null); setSession(null); setRoleData('viewer', {}); isRoleSynced.current = false;
   };
-
   const resetPassword = async (email: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-    if (error) return { error: error.message };
-    return { error: null };
+    const supabase = getSupabase(); if (!supabase) return { error: 'Lỗi' };
+    const { error } = await supabase.auth.resetPasswordForEmail(email); return { error: error?.message || null };
   };
 
   const getAllUsers = async (): Promise<UserWithRole[]> => {
-    const supabase = getSupabase();
-    if (!supabase) return [];
+    const supabase = getSupabase(); if (!supabase) return [];
     const { data, error } = await supabase.rpc('get_all_users_with_roles');
-    if (error) {
-      console.error('getAllUsers error:', error);
-      return [];
-    }
-    return (data || []) as UserWithRole[];
+    return error ? [] : (data || []) as UserWithRole[];
   };
 
   const updateUserRole = async (userId: string, newRole: UserRole) => {
-    const supabase = getSupabase();
-    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
+    const supabase = getSupabase(); if (!supabase) return { error: 'Lỗi cấu hình' };
     const { error } = await supabase.rpc('update_user_role', { target_user_id: userId, new_role: newRole });
-    if (error) return { error: error.message };
-    return { error: null };
+    return { error: error?.message || null };
   };
 
-  const canEdit = ['admin', 'manager', 'member'].includes(role);
-  const canManage = ['admin', 'manager'].includes(role);
-  const isAdmin = role === 'admin';
+  const updateUserPermissions = async (userId: string, newPermissions: PermissionMatrix) => {
+    const supabase = getSupabase(); if (!supabase) return { error: 'Lỗi cấu hình' };
+    const { error } = await supabase.rpc('update_user_permissions', { target_user_id: userId, new_permissions: newPermissions });
+    return { error: error?.message || null };
+  };
+
+  const checkPermission = (page: string, action: 'view' | 'edit' | 'delete') => {
+    if (role === 'admin') return true; 
+    if (!permissions[page]) return false; 
+    return permissions[page][action] === true;
+  };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user, session, role, loading, configured,
-        signIn, signUp, signOut, resetPassword,
-        getAllUsers, updateUserRole,
-        canEdit, canManage, isAdmin, refreshRole,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user, session, role, permissions, loading, configured,
+      signIn, signUp, signOut, resetPassword,
+      getAllUsers, updateUserRole, updateUserPermissions,
+      checkPermission,
+      canEdit: ['admin', 'manager', 'member'].includes(role),
+      canManage: ['admin', 'manager'].includes(role),
+      isAdmin: role === 'admin',
+      refreshRole,
+    }}>
       {children}
     </AuthContext.Provider>
   );
