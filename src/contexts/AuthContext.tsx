@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { getSupabase, getSupabaseConfig } from '../lib/supabase';
+import { getSupabase, getSupabaseConfig, decodeJWT } from '../lib/supabase';
 
 export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
@@ -37,6 +37,20 @@ export function useAuth() {
   return ctx;
 }
 
+// Hàm đọc quyền dự phòng từ Token
+function getRoleFromSession(session: Session | null): UserRole {
+  try {
+    if (!session?.access_token) return 'viewer';
+    const decoded = decodeJWT(session.access_token);
+    if (!decoded) return 'member'; // Mặc định của hệ thống
+    const role = decoded.user_role as string;
+    if (['admin', 'manager', 'member', 'viewer'].includes(role)) return role as UserRole;
+    return 'member';
+  } catch (error) {
+    return 'member';
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -44,27 +58,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // BƯỚC 1: HÀM LẤY QUYỀN TRỰC TIẾP TỪ DATABASE (BỎ QUA TOKEN)
-  const syncRoleFromDB = useCallback(async (userId: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-    try {
-      // Dùng RPC để vượt qua mọi rào cản bảo mật RLS, lấy quyền chuẩn xác 100%
-      const { data: users } = await supabase.rpc('get_all_users_with_roles');
-      if (users) {
-        const me = (users as UserWithRole[]).find(u => u.user_id === userId);
-        if (me && me.role) {
-          setRole(me.role);
-        }
-      }
-    } catch (e) {
-      console.error("Lỗi đồng bộ quyền:", e);
+  // HÀM ĐỒNG BỘ QUYỀN CHUẨN XÁC: Ai lấy quyền người nấy (Không dùng hàm Admin)
+  const syncLiveRole = useCallback(async (currentSession: Session | null) => {
+    if (!currentSession?.user) {
+      setRole('viewer');
+      return;
     }
+
+    // 1. Gắn quyền từ Token làm mặc định dự phòng
+    let finalRole = getRoleFromSession(currentSession);
+
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        // 2. Tự đọc quyền của chính mình từ Database
+        // Dùng maybeSingle() để không văng lỗi nếu user chưa có tên trong bảng
+        const { data, error } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', currentSession.user.id)
+          .maybeSingle();
+
+        if (!error && data?.role) {
+          finalRole = data.role as UserRole;
+        }
+      } catch (err) {
+        console.error("Lỗi khi fetch live role:", err);
+      }
+    }
+
+    setRole(finalRole);
   }, []);
 
   const refreshRole = useCallback(() => {
-    if (user?.id) syncRoleFromDB(user.id);
-  }, [user?.id, syncRoleFromDB]);
+    syncLiveRole(session);
+  }, [session, syncLiveRole]);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -75,36 +103,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
-    // Lấy Session lần đầu
     supabase.auth.getSession()
       .then(({ data: { session: s } }) => {
         if (mounted) {
           setSession(s);
           setUser(s?.user ?? null);
-          if (s?.user) {
-            syncRoleFromDB(s.user.id).finally(() => {
-              if (mounted) setLoading(false);
-            });
-          } else {
-            setLoading(false);
-          }
+          syncLiveRole(s).finally(() => {
+            if (mounted) setLoading(false);
+          });
         }
       })
       .catch((err) => {
-        console.error("Lỗi lấy Session:", err);
         if (mounted) setLoading(false);
       });
 
-    // Lắng nghe Đăng nhập / Đăng xuất
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       if (mounted) {
         setSession(s);
         setUser(s?.user ?? null);
-        if (s?.user) {
-          syncRoleFromDB(s.user.id);
-        } else {
-          setRole('viewer');
-        }
+        syncLiveRole(s);
       }
     });
 
@@ -112,34 +129,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [configured, syncRoleFromDB]);
+  }, [configured, syncLiveRole]);
 
-  // BƯỚC 2: BẢO HIỂM 2 LỚP CHO TỰ ĐỘNG CẬP NHẬT GIAO DIỆN
+  // LẮNG NGHE REALTIME & QUÉT NGẦM TỰ ĐỘNG
   useEffect(() => {
     const supabase = getSupabase();
-    if (!supabase || !user) return;
+    if (!supabase || !user?.id) return;
 
-    // Lớp 1: Cập nhật tức thì bằng Realtime
+    const updateRole = () => syncLiveRole(session);
+
+    // Bắt sự kiện Realtime
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        () => syncRoleFromDB(user.id)
+        { event: '*', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
+        () => {
+           updateRole();
+           supabase.auth.refreshSession().catch(() => {});
+        }
       )
       .subscribe();
 
-    // Lớp 2: Kiểm tra ngầm định kỳ mỗi 5 giây
-    // (Khắc phục 100% lỗi nếu Realtime của Supabase bị miss hoặc chưa bật)
-    const checkInterval = setInterval(() => {
-      syncRoleFromDB(user.id);
-    }, 5000);
+    // BẢO HIỂM KÉP: Kiểm tra lại quyền mỗi 3 giây 
+    // (Đảm bảo giao diện 100% tự biến đổi khi bị hạ/nâng cấp mà không cần F5)
+    const intervalId = setInterval(updateRole, 3000);
 
     return () => {
       supabase.removeChannel(roleSubscription);
-      clearInterval(checkInterval);
+      clearInterval(intervalId);
     };
-  }, [user?.id, syncRoleFromDB]);
+  }, [user?.id, session, syncLiveRole]);
 
   // --- CÁC HÀM CỦA ADMIN VÀ AUTH GIỮ NGUYÊN ---
   const signIn = async (email: string, password: string) => {
