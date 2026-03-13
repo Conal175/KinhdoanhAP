@@ -1,110 +1,6 @@
-Skip to content
-Conal175
-KinhdoanhAP
-Repository navigation
-Code
-Issues
-Pull requests
-Actions
-Projects
-Wiki
-Security
-Insights
-Settings
-KinhdoanhAP/src/contexts
-/
-AuthContext.tsx
-in
-main
-
-Edit
-
-Preview
-Indent mode
-
-Spaces
-Indent size
-
-2
-Line wrap mode
-
-No wrap
-Editing AuthContext.tsx file contents
-  1
-  2
-  3
-  4
-  5
-  6
-  7
-  8
-  9
- 10
- 11
- 12
- 13
- 14
- 15
- 16
- 17
- 18
- 19
- 20
- 21
- 22
- 23
- 24
- 25
- 26
- 27
- 28
- 29
- 30
- 31
- 32
- 33
- 34
- 35
- 36
- 37
- 38
- 39
- 40
- 41
- 42
- 43
- 44
- 45
- 46
- 47
- 48
- 49
- 50
- 51
- 52
- 53
- 54
- 55
- 56
- 57
- 58
- 59
- 60
- 61
- 62
- 63
- 64
- 65
- 66
- 67
- 68
- 69
- 70
- 71
- 72
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { getSupabase, getSupabaseConfig } from '../lib/supabase';
+import { getSupabase, getSupabaseConfig, decodeJWT } from '../lib/supabase';
 
 export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
@@ -130,7 +26,7 @@ interface AuthContextType {
   canEdit: boolean;
   canManage: boolean;
   isAdmin: boolean;
-  refreshRole: () => Promise<void>;
+  refreshRole: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -141,6 +37,20 @@ export function useAuth() {
   return ctx;
 }
 
+function getRoleFromSession(session: Session | null): UserRole {
+  try {
+    if (!session?.access_token) return 'viewer';
+    const decoded = decodeJWT(session.access_token);
+    if (!decoded) return 'member';
+    const role = decoded.user_role as string;
+    if (['admin', 'manager', 'member', 'viewer'].includes(role)) return role as UserRole;
+    return 'member';
+  } catch (error) {
+    console.error("Lỗi giải mã JWT:", error);
+    return 'viewer';
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -148,32 +58,143 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // HÀM LẤY QUYỀN TRỰC TIẾP TỪ DATABASE (Độ chính xác 100%, không phụ thuộc Token)
-  const fetchLiveRole = useCallback(async (userId: string) => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-    try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
-      if (!error && data?.role) {
-        setRole(data.role as UserRole);
-      } else {
-        setRole('viewer'); // An toàn: Lỗi thì cho về viewer
-      }
-    } catch (e) {
-      console.error("Lỗi fetchLiveRole:", e);
-      setRole('viewer');
-    }
-  }, []);
+  const refreshRole = useCallback(() => {
+    setRole(getRoleFromSession(session));
+  }, [session]);
 
-  const refreshRole = useCallback(async () => {
-    if (user?.id) {
-      await fetchLiveRole(user.id);
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) {
+      setLoading(false);
+      return;
     }
-  }, [user?.id, fetchLiveRole]);
-Use Control + Shift + m to toggle the tab key moving focus. Alternatively, use esc then tab to move to the next interactive element on the page.
-Copied!
- 
+
+    let mounted = true;
+
+    supabase.auth.getSession()
+      .then(({ data: { session: s } }) => {
+        if (mounted) {
+          setSession(s);
+          setUser(s?.user ?? null);
+          setRole(getRoleFromSession(s));
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Lỗi lấy Session:", err);
+        if (mounted) setLoading(false);
+      });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (mounted) {
+        setSession(s);
+        setUser(s?.user ?? null);
+        setRole(getRoleFromSession(s));
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [configured]);
+
+  // LẮNG NGHE REALTIME
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase || !user) return;
+
+    const roleSubscription = supabase
+      .channel(`role-update-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
+        () => {
+          // Đợi 1.5s để database cập nhật, sau đó lấy thẻ Token mới
+          setTimeout(async () => {
+            try {
+              await supabase.auth.refreshSession();
+            } catch (err) {
+              console.error("Lỗi refresh token realtime:", err);
+            }
+          }, 1500);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(roleSubscription);
+    };
+  }, [user?.id]);
+
+  const signIn = async (email: string, password: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
+  const signUp = async (email: string, password: string, fullName: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
+    const { error } = await supabase.auth.signUp({
+      email, password, options: { data: { full_name: fullName } },
+    });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
+  const signOut = async () => {
+    const supabase = getSupabase();
+    if (supabase) await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setRole('viewer');
+  };
+
+  const resetPassword = async (email: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
+  const getAllUsers = async (): Promise<UserWithRole[]> => {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc('get_all_users_with_roles');
+    if (error) {
+      console.error('getAllUsers error:', error);
+      return [];
+    }
+    return (data || []) as UserWithRole[];
+  };
+
+  const updateUserRole = async (userId: string, newRole: UserRole) => {
+    const supabase = getSupabase();
+    if (!supabase) return { error: 'Supabase chưa được cấu hình' };
+    const { error } = await supabase.rpc('update_user_role', { target_user_id: userId, new_role: newRole });
+    if (error) return { error: error.message };
+    return { error: null };
+  };
+
+  const canEdit = ['admin', 'manager', 'member'].includes(role);
+  const canManage = ['admin', 'manager'].includes(role);
+  const isAdmin = role === 'admin';
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user, session, role, loading, configured,
+        signIn, signUp, signOut, resetPassword,
+        getAllUsers, updateUserRole,
+        canEdit, canManage, isAdmin, refreshRole,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
