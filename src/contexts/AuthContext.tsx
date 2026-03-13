@@ -111,14 +111,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
         () => {
-          // Đợi 1.5s để database cập nhật, sau đó lấy thẻ Token mới
+          // XỬ LÝ TRIỆT ĐỂ: Vừa lấy Token mới, vừa dùng RPC làm phương án dự phòng
           setTimeout(async () => {
             try {
-              await supabase.auth.refreshSession();
+              // 1. Ép lấy Token mới và BẮT BUỘC React cập nhật State (Giao diện)
+              const { data, error } = await supabase.auth.refreshSession();
+              if (!error && data?.session) {
+                setSession(data.session);
+                setRole(getRoleFromSession(data.session));
+              }
+              
+              // 2. PHƯƠNG ÁN BẢO HIỂM 100%: Lấy quyền thẳng từ DB bằng Hàm Đặc Quyền (RPC)
+              // Hàm này bỏ qua RLS nên tài khoản phụ cũng lấy được quyền chính xác của mình
+              const { data: users } = await supabase.rpc('get_all_users_with_roles');
+              if (users) {
+                const myUser = (users as UserWithRole[]).find(u => u.user_id === user.id);
+                if (myUser && myUser.role) {
+                  setRole(myUser.role); // Gắn thẳng quyền chuẩn vào React
+                }
+              }
             } catch (err) {
               console.error("Lỗi refresh token realtime:", err);
             }
-          }, 1500);
+          }, 1000); // Rút ngắn thời gian chờ xuống 1 giây cho mượt mà
         }
       )
       .subscribe();
