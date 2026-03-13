@@ -393,67 +393,85 @@ function MainApp() {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <button
-            onClick={() => handleTabClick('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-          >
-            <LayoutDashboard className="w-5 h-5" /> Dashboard
-          </button>
-
-          <button
-            onClick={() => handleTabClick('action-plan')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'action-plan' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-          >
-            <ListTodo className="w-5 h-5" /> Action Plan
-          </button>
-
-          <div>
+          {auth.checkPermission('dashboard', 'view') && (
             <button
-              onClick={() => setStrategyExpanded(!strategyExpanded)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${isStrategyTab ? 'bg-yellow-50 text-yellow-700' : 'text-gray-600 hover:bg-gray-50'}`}
+              onClick={() => handleTabClick('dashboard')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <div className="flex items-center gap-3">
-                <Lightbulb className="w-5 h-5" /> Chiến Lược
-              </div>
-              {strategyExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              <LayoutDashboard className="w-5 h-5" /> Dashboard
             </button>
-            {strategyExpanded && (
-              <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
-                <button
-                  onClick={() => handleTabClick('strategy-products')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-products' ? 'bg-amber-50 text-amber-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                  <Package className="w-4 h-4" /> Chi Tiết Sản Phẩm
-                </button>
-                <button
-                  onClick={() => handleTabClick('strategy-customers')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-customers' ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                  <Users className="w-4 h-4" /> Chân Dung Khách Hàng
-                </button>
-                <button
-                  onClick={() => handleTabClick('strategy-competitors')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-competitors' ? 'bg-red-50 text-red-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                  <Swords className="w-4 h-4" /> Tình Báo Đối Thủ
-                </button>
-              </div>
-            )}
-          </div>
+          )}
 
-          <button
-            onClick={() => handleTabClick('daily-report')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'daily-report' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-          >
-            <BarChart3 className="w-5 h-5" /> Báo Cáo
-          </button>
+          {auth.checkPermission('action_plan', 'view') && (
+            <button
+              onClick={() => handleTabClick('action-plan')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'action-plan' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <ListTodo className="w-5 h-5" /> Action Plan
+            </button>
+          )}
 
-          <button
-            onClick={() => handleTabClick('media')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'media' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
-          >
-            <Image className="w-5 h-5" /> Media
-          </button>
+          {(auth.checkPermission('strategy_product', 'view') || 
+            auth.checkPermission('strategy_customer', 'view') || 
+            auth.checkPermission('competitors', 'view')) && (
+            <div>
+              <button
+                onClick={() => setStrategyExpanded(!strategyExpanded)}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${isStrategyTab ? 'bg-yellow-50 text-yellow-700' : 'text-gray-600 hover:bg-gray-50'}`}
+              >
+                <div className="flex items-center gap-3">
+                  <Lightbulb className="w-5 h-5" /> Chiến Lược
+                </div>
+                {strategyExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </button>
+              {strategyExpanded && (
+                <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
+                  {auth.checkPermission('strategy_product', 'view') && (
+                    <button
+                      onClick={() => handleTabClick('strategy-products')}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-products' ? 'bg-amber-50 text-amber-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      <Package className="w-4 h-4" /> Chi Tiết Sản Phẩm
+                    </button>
+                  )}
+                  {auth.checkPermission('strategy_customer', 'view') && (
+                    <button
+                      onClick={() => handleTabClick('strategy-customers')}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-customers' ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      <Users className="w-4 h-4" /> Chân Dung Khách Hàng
+                    </button>
+                  )}
+                  {auth.checkPermission('competitors', 'view') && (
+                    <button
+                      onClick={() => handleTabClick('strategy-competitors')}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${activeTab === 'strategy-competitors' ? 'bg-red-50 text-red-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      <Swords className="w-4 h-4" /> Tình Báo Đối Thủ
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {auth.checkPermission('daily_report', 'view') && (
+            <button
+              onClick={() => handleTabClick('daily-report')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'daily-report' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <BarChart3 className="w-5 h-5" /> Báo Cáo
+            </button>
+          )}
+
+          {auth.checkPermission('media', 'view') && (
+            <button
+              onClick={() => handleTabClick('media')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'media' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Image className="w-5 h-5" /> Media
+            </button>
+          )}
 
           {auth.isAdmin && (
             <>
@@ -544,28 +562,28 @@ function MainApp() {
         </header>
 
         <main className="p-4 sm:p-6 lg:p-8 max-w-7xl">
-          {activeTab === 'dashboard' && <Dashboard project={activeProject} />}
-          {activeTab === 'action-plan' && <ActionPlan project={activeProject} />}
-          {activeTab === 'strategy-products' && (
+          {activeTab === 'dashboard' && auth.checkPermission('dashboard', 'view') && <Dashboard project={activeProject} />}
+          {activeTab === 'action-plan' && auth.checkPermission('action_plan', 'view') && <ActionPlan project={activeProject} />}
+          {activeTab === 'strategy-products' && auth.checkPermission('strategy_product', 'view') && (
             <ProductStrategy
               projectId={activeProject.id}
               onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }}
             />
           )}
-          {activeTab === 'strategy-customers' && (
+          {activeTab === 'strategy-customers' && auth.checkPermission('strategy_customer', 'view') && (
             <CustomerStrategy
               projectId={activeProject.id}
               onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }}
             />
           )}
-          {activeTab === 'strategy-competitors' && (
+          {activeTab === 'strategy-competitors' && auth.checkPermission('competitors', 'view') && (
             <CompetitorStrategy
               projectId={activeProject.id}
               onBack={() => { setActiveTab('dashboard'); setStrategyExpanded(false); }}
             />
           )}
-          {activeTab === 'daily-report' && <DailyReport projectId={activeProject.id} />}
-          {activeTab === 'media' && <MediaResources projectId={activeProject.id} />}
+          {activeTab === 'daily-report' && auth.checkPermission('daily_report', 'view') && <DailyReport projectId={activeProject.id} />}
+          {activeTab === 'media' && auth.checkPermission('media', 'view') && <MediaResources projectId={activeProject.id} />}
           {activeTab === 'admin' && auth.isAdmin && <AdminPanel />}
         </main>
       </div>
