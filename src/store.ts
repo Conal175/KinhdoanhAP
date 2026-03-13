@@ -1,63 +1,121 @@
-import { useState, useCallback } from 'react';
-import type { Fanpage, ContentAd } from '../types';
-import { getFanpages, saveFanpages, getContentAds, saveContentAds } from '../store';
-import { v4 as uuid } from 'uuid';
-import { useAuth } from '../contexts/AuthContext';
-import { Plus, Trash2, Image, Globe, Check, Edit3, X, Info, ExternalLink } from 'lucide-react';
+import type { Project, Task, ActionPhase, ProductAdvantage, CustomerInfo, PainPoint, FAQ, Competitor, DailyLog, Fanpage, ContentAd } from './types';
 
-const DEFAULT_CHECKLIST_ITEMS = [
-  { label: 'Tên Fanpage - URL Page', icon: '🌐', description: 'Ngắn gọn, gợi nhớ thương hiệu' },
-  { label: 'Ảnh bìa (Cover)', icon: '🎨', description: 'Nội dung ảnh: 828x315 px. Nên thể hiện rõ sản phẩm...' },
-  { label: 'Avatar', icon: '🖼️', description: 'Logo doanh nghiệp. 2048x2048px.' },
-  { label: 'Mô tả ngắn', icon: '📝', description: 'Ngắn gọn, không quá 255 ký tự.' },
-  { label: 'Nút hành động (CTA)', icon: '📲', description: 'Kêu gọi khách hàng mua hàng.' },
-  { label: 'Hộp thư tự động', icon: '💬', description: 'Kịch bản tin nhắn chào mừng, trả lời nhanh.' },
-  // ... bạn hãy copy toàn bộ 13 mục từ DEFAULT_CHECKLIST_ITEMS trong file gốc vào đây ...
-];
+const KEYS = {
+  projects: 'pm_projects',
+  tasks: 'pm_tasks',
+  actionPhases: 'pm_actionphases',
+  advantages: 'pm_advantages',
+  customerInfos: 'pm_customerinfos',
+  painPoints: 'pm_painpoints',
+  faqs: 'pm_faqs',
+  competitors: 'pm_competitors',
+  dailyLogs: 'pm_dailylogs',
+  fanpageChecks: 'pm_fanpage',
+  contentAds: 'pm_contentads',
+};
 
-export function MediaResources({ projectId }: { projectId: string }) {
-  const { checkPermission } = useAuth();
-  const canEdit = checkPermission('media', 'edit');
-  const canDelete = checkPermission('media', 'delete');
-
-  const [tab, setTab] = useState<'checklist' | 'content'>('checklist');
-  const [fanpages, setFanpages] = useState<Fanpage[]>(() => getFanpages(projectId));
-  const [ads, setAds] = useState<ContentAd[]>(() => getContentAds(projectId));
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Quản Lý Tài Nguyên Media</h2>
-      <div className="flex gap-2">
-        <button onClick={() => setTab('checklist')} className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${tab==='checklist' ? 'bg-teal-600 text-white shadow-md' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}><Globe className="w-4 h-4 inline mr-2"/> Checklist Fanpage</button>
-        <button onClick={() => setTab('content')} className={`px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${tab==='content' ? 'bg-teal-600 text-white shadow-md' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}><Image className="w-4 h-4 inline mr-2"/> Thư Viện Content Ads</button>
-      </div>
-
-      {tab === 'checklist' ? (
-        <div className="space-y-4">
-          {canEdit && <button onClick={() => { if(canEdit) { const n = {id: uuid(), projectId, name: 'Fanpage Mới', url: '', createdAt: new Date().toISOString(), items: []}; setFanpages([...fanpages, n]); saveFanpages(projectId, [...fanpages, n]); } }} className="bg-teal-600 text-white px-5 py-3 rounded-xl flex items-center gap-2 shadow-md font-bold hover:bg-teal-700 transition-all"><Plus className="w-5 h-5" /> Thêm Fanpage</button>}
-          {fanpages.map(fp => (
-            <div key={fp.id} className="bg-white rounded-xl border border-gray-100 p-4 flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-teal-100 text-teal-600 rounded-lg flex items-center justify-center font-bold transition-colors"><Globe className="w-5 h-5"/></div><div><p className="font-bold text-gray-800">{fp.name}</p><p className="text-xs text-gray-400 font-medium">{fp.items.length} mục kiểm tra</p></div></div>
-              <div className="flex items-center gap-1">
-                 {canEdit && <button className="p-2 text-gray-400 hover:text-teal-600 transition-colors"><Edit3 className="w-4 h-4"/></button>}
-                 {canDelete && <button onClick={() => { if(confirm('Xóa Fanpage?')) { const n = fanpages.filter(f => f.id !== fp.id); setFanpages(n); saveFanpages(projectId, n); } }} className="p-2 text-gray-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4"/></button>}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {ads.map(ad => (
-            <div key={ad.id} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-3">
-                 <span className="text-[10px] font-extrabold bg-teal-50 text-teal-700 px-2 py-1 rounded-full uppercase tracking-tighter">{ad.angle}</span>
-                 {canDelete && <button onClick={() => { const n = ads.filter(a => a.id !== ad.id); setAds(n); saveContentAds(projectId, n); }} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4"/></button>}
-              </div>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-medium">{ad.caption}</p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+function load<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
 }
+
+function save<T>(key: string, data: T[]) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+// Projects
+export const getProjects = (): Project[] => load(KEYS.projects);
+export const saveProjects = (p: Project[]) => save(KEYS.projects, p);
+
+// Tasks
+export const getTasks = (projectId: string): Task[] =>
+  load<Task>(KEYS.tasks).filter(t => t.projectId === projectId);
+export const getAllTasks = (): Task[] => load(KEYS.tasks);
+export const saveTasks = (tasks: Task[]) => save(KEYS.tasks, tasks);
+export const saveTasksForProject = (projectId: string, tasks: Task[]) => {
+  const all = load<Task>(KEYS.tasks).filter(t => t.projectId !== projectId);
+  save(KEYS.tasks, [...all, ...tasks]);
+};
+
+// Product Advantages
+export const getAdvantages = (pid: string): ProductAdvantage[] =>
+  load<ProductAdvantage>(KEYS.advantages).filter(a => a.projectId === pid);
+export const saveAdvantages = (pid: string, items: ProductAdvantage[]) => {
+  const all = load<ProductAdvantage>(KEYS.advantages).filter(a => a.projectId !== pid);
+  save(KEYS.advantages, [...all, ...items]);
+};
+
+// Customer Infos
+export const getCustomerInfos = (pid: string): CustomerInfo[] =>
+  load<CustomerInfo>(KEYS.customerInfos).filter(c => c.projectId === pid);
+export const saveCustomerInfos = (pid: string, items: CustomerInfo[]) => {
+  const all = load<CustomerInfo>(KEYS.customerInfos).filter(c => c.projectId !== pid);
+  save(KEYS.customerInfos, [...all, ...items]);
+};
+
+// Pain Points
+export const getPainPoints = (pid: string): PainPoint[] =>
+  load<PainPoint>(KEYS.painPoints).filter(p => p.projectId === pid);
+export const savePainPoints = (pid: string, items: PainPoint[]) => {
+  const all = load<PainPoint>(KEYS.painPoints).filter(p => p.projectId !== pid);
+  save(KEYS.painPoints, [...all, ...items]);
+};
+
+// FAQs
+export const getFAQs = (pid: string): FAQ[] =>
+  load<FAQ>(KEYS.faqs).filter(f => f.projectId === pid);
+export const saveFAQs = (pid: string, items: FAQ[]) => {
+  const all = load<FAQ>(KEYS.faqs).filter(f => f.projectId !== pid);
+  save(KEYS.faqs, [...all, ...items]);
+};
+
+// Competitors
+export const getCompetitors = (pid: string): Competitor[] =>
+  load<Competitor>(KEYS.competitors).filter(c => c.projectId === pid);
+export const saveCompetitors = (pid: string, items: Competitor[]) => {
+  const all = load<Competitor>(KEYS.competitors).filter(c => c.projectId !== pid);
+  save(KEYS.competitors, [...all, ...items]);
+};
+
+// Daily Logs
+export const getDailyLogs = (pid: string): DailyLog[] =>
+  load<DailyLog>(KEYS.dailyLogs).filter(d => d.projectId === pid);
+export const saveDailyLogs = (pid: string, items: DailyLog[]) => {
+  const all = load<DailyLog>(KEYS.dailyLogs).filter(d => d.projectId !== pid);
+  save(KEYS.dailyLogs, [...all, ...items]);
+};
+
+// Fanpages (with embedded checklist)
+export const getFanpages = (pid: string): Fanpage[] =>
+  load<Fanpage>(KEYS.fanpageChecks).filter(f => f.projectId === pid);
+export const saveFanpages = (pid: string, items: Fanpage[]) => {
+  const all = load<Fanpage>(KEYS.fanpageChecks).filter(f => f.projectId !== pid);
+  save(KEYS.fanpageChecks, [...all, ...items]);
+};
+
+// Content Ads
+export const getContentAds = (pid: string): ContentAd[] =>
+  load<ContentAd>(KEYS.contentAds).filter(c => c.projectId === pid);
+export const saveContentAds = (pid: string, items: ContentAd[]) => {
+  const all = load<ContentAd>(KEYS.contentAds).filter(c => c.projectId !== pid);
+  save(KEYS.contentAds, [...all, ...items]);
+};
+
+// Action Phases (new Action Plan structure)
+export const getActionPhases = (pid: string): ActionPhase[] => {
+  const key = `${KEYS.actionPhases}_${pid}`;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+export const saveActionPhases = (pid: string, phases: ActionPhase[]) => {
+  const key = `${KEYS.actionPhases}_${pid}`;
+  localStorage.setItem(key, JSON.stringify(phases));
+};
