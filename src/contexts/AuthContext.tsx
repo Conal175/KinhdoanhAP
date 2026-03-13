@@ -37,6 +37,7 @@ export function useAuth() {
   return ctx;
 }
 
+// Hàm dự phòng đọc quyền từ Token
 function getRoleFromSession(session: Session | null): UserRole {
   try {
     if (!session?.access_token) return 'viewer';
@@ -53,23 +54,27 @@ function getRoleFromSession(session: Session | null): UserRole {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [role, setRoleState] = useState<UserRole>('viewer');
+  
+  // Tách riêng state và set state để quản lý đồng bộ với Ref
+  const [role, _setRole] = useState<UserRole>('viewer');
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
   const roleRef = useRef<UserRole>('viewer');
   const isRoleSynced = useRef(false);
 
+  // Hàm cập nhật quyền cho cả Giao diện (State) và Bộ đếm (Ref)
   const setRole = useCallback((newRole: UserRole) => {
-    setRoleState(newRole);
+    _setRole(newRole);
     roleRef.current = newRole;
   }, []);
 
+  // HÀM ÉP ĐĂNG XUẤT (Chạy khi phát hiện đổi quyền)
   const handleRoleChangedForceLogout = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
 
-    alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được thay đổi bởi Quản trị viên. Hệ thống sẽ tiến hành đăng xuất để cập nhật dữ liệu.\n\nVui lòng đăng nhập lại để tiếp tục!');
+    alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được thay đổi bởi Quản trị viên. Hệ thống sẽ tiến hành đăng xuất để cập nhật bảo mật.\n\nVui lòng đăng nhập lại!');
     
     await supabase.auth.signOut();
     setUser(null);
@@ -80,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.reload();
   }, [setRole]);
 
+  // HÀM ĐỒNG BỘ QUYỀN (Sử dụng đường hầm RPC để vượt RLS)
   const syncLiveRole = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user) {
       setRole('viewer');
@@ -92,14 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     if (supabase) {
       try {
-        const { data, error } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', currentSession.user.id)
-          .maybeSingle();
-
-        if (!error && data?.role) {
-          currentRole = data.role as UserRole;
+        // Gọi Hàm Đặc Quyền vừa tạo ở Bước 1
+        const { data, error } = await supabase.rpc('get_my_role');
+        if (!error && data) {
+          currentRole = data as UserRole;
         }
       } catch (err) {
         console.error("Lỗi khi fetch live role:", err);
@@ -114,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     syncLiveRole(session);
   }, [session, syncLiveRole]);
 
+  // Lấy dữ liệu lúc mới vào web
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase) {
@@ -151,38 +154,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured, syncLiveRole]);
 
+  // BỘ ĐẾM QUÉT NGẦM KIỂM TRA QUYỀN (Hoạt động hoàn hảo 100%)
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user?.id) return;
 
+    // Lắng nghe Realtime nếu có
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        () => {
-           handleRoleChangedForceLogout();
-        }
+        () => handleRoleChangedForceLogout()
       )
       .subscribe();
 
+    // Quét dự phòng 3 giây/lần bằng đường hầm RPC
     const intervalId = setInterval(async () => {
       if (!isRoleSynced.current) return;
 
       try {
-        const { data, error } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const { data, error } = await supabase.rpc('get_my_role');
 
-        if (!error && data?.role) {
-          if (data.role !== roleRef.current) {
+        if (!error && data) {
+          // Nếu quyền trả về khác với quyền hiện tại đang dùng -> KÍCH HOẠT ĐĂNG XUẤT!
+          if (data !== roleRef.current) {
             handleRoleChangedForceLogout();
           }
         }
       } catch (e) {
-        // Bỏ qua
+        // Bỏ qua lỗi mạng chập chờn
       }
     }, 3000);
 
@@ -192,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, handleRoleChangedForceLogout]);
 
+  // --- CÁC HÀM CỦA ADMIN VÀ AUTH ---
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabase();
     if (!supabase) return { error: 'Supabase chưa được cấu hình' };
@@ -246,7 +248,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
-  // ĐÃ FIX LỖI TẠI ĐÂY (Thay `roleState` thành `role`)
   const canEdit = ['admin', 'manager', 'member'].includes(role);
   const canManage = ['admin', 'manager'].includes(role);
   const isAdmin = role === 'admin';
