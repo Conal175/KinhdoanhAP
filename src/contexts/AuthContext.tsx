@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { getSupabase, getSupabaseConfig, decodeJWT } from '../lib/supabase';
+import { getSupabase, getSupabaseConfig } from '../lib/supabase';
 
 export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
@@ -37,20 +37,6 @@ export function useAuth() {
   return ctx;
 }
 
-function getRoleFromSession(session: Session | null): UserRole {
-  try {
-    if (!session?.access_token) return 'viewer';
-    const decoded = decodeJWT(session.access_token);
-    if (!decoded) return 'member';
-    const role = decoded.user_role as string;
-    if (['admin', 'manager', 'member', 'viewer'].includes(role)) return role as UserRole;
-    return 'member';
-  } catch (error) {
-    console.error("Lỗi giải mã JWT:", error);
-    return 'viewer';
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -58,9 +44,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
+  // BƯỚC 1: HÀM LẤY QUYỀN TRỰC TIẾP TỪ DATABASE (BỎ QUA TOKEN)
+  const syncRoleFromDB = useCallback(async (userId: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      // Dùng RPC để vượt qua mọi rào cản bảo mật RLS, lấy quyền chuẩn xác 100%
+      const { data: users } = await supabase.rpc('get_all_users_with_roles');
+      if (users) {
+        const me = (users as UserWithRole[]).find(u => u.user_id === userId);
+        if (me && me.role) {
+          setRole(me.role);
+        }
+      }
+    } catch (e) {
+      console.error("Lỗi đồng bộ quyền:", e);
+    }
+  }, []);
+
   const refreshRole = useCallback(() => {
-    setRole(getRoleFromSession(session));
-  }, [session]);
+    if (user?.id) syncRoleFromDB(user.id);
+  }, [user?.id, syncRoleFromDB]);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -71,13 +75,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
+    // Lấy Session lần đầu
     supabase.auth.getSession()
       .then(({ data: { session: s } }) => {
         if (mounted) {
           setSession(s);
           setUser(s?.user ?? null);
-          setRole(getRoleFromSession(s));
-          setLoading(false);
+          if (s?.user) {
+            syncRoleFromDB(s.user.id).finally(() => {
+              if (mounted) setLoading(false);
+            });
+          } else {
+            setLoading(false);
+          }
         }
       })
       .catch((err) => {
@@ -85,12 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted) setLoading(false);
       });
 
+    // Lắng nghe Đăng nhập / Đăng xuất
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       if (mounted) {
         setSession(s);
         setUser(s?.user ?? null);
-        setRole(getRoleFromSession(s));
-        setLoading(false);
+        if (s?.user) {
+          syncRoleFromDB(s.user.id);
+        } else {
+          setRole('viewer');
+        }
       }
     });
 
@@ -98,51 +112,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [configured]);
+  }, [configured, syncRoleFromDB]);
 
-  // LẮNG NGHE REALTIME
+  // BƯỚC 2: BẢO HIỂM 2 LỚP CHO TỰ ĐỘNG CẬP NHẬT GIAO DIỆN
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user) return;
 
+    // Lớp 1: Cập nhật tức thì bằng Realtime
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        () => {
-          // XỬ LÝ TRIỆT ĐỂ: Vừa lấy Token mới, vừa dùng RPC làm phương án dự phòng
-          setTimeout(async () => {
-            try {
-              // 1. Ép lấy Token mới và BẮT BUỘC React cập nhật State (Giao diện)
-              const { data, error } = await supabase.auth.refreshSession();
-              if (!error && data?.session) {
-                setSession(data.session);
-                setRole(getRoleFromSession(data.session));
-              }
-              
-              // 2. PHƯƠNG ÁN BẢO HIỂM 100%: Lấy quyền thẳng từ DB bằng Hàm Đặc Quyền (RPC)
-              // Hàm này bỏ qua RLS nên tài khoản phụ cũng lấy được quyền chính xác của mình
-              const { data: users } = await supabase.rpc('get_all_users_with_roles');
-              if (users) {
-                const myUser = (users as UserWithRole[]).find(u => u.user_id === user.id);
-                if (myUser && myUser.role) {
-                  setRole(myUser.role); // Gắn thẳng quyền chuẩn vào React
-                }
-              }
-            } catch (err) {
-              console.error("Lỗi refresh token realtime:", err);
-            }
-          }, 1000); // Rút ngắn thời gian chờ xuống 1 giây cho mượt mà
-        }
+        () => syncRoleFromDB(user.id)
       )
       .subscribe();
 
+    // Lớp 2: Kiểm tra ngầm định kỳ mỗi 5 giây
+    // (Khắc phục 100% lỗi nếu Realtime của Supabase bị miss hoặc chưa bật)
+    const checkInterval = setInterval(() => {
+      syncRoleFromDB(user.id);
+    }, 5000);
+
     return () => {
       supabase.removeChannel(roleSubscription);
+      clearInterval(checkInterval);
     };
-  }, [user?.id]);
+  }, [user?.id, syncRoleFromDB]);
 
+  // --- CÁC HÀM CỦA ADMIN VÀ AUTH GIỮ NGUYÊN ---
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabase();
     if (!supabase) return { error: 'Supabase chưa được cấu hình' };
