@@ -1,364 +1,280 @@
-import { useState, useEffect } from 'react';
-import type { Project, ActionPhase, ActionSubPhase, ActionTask } from '../types';
+import React, { useState } from 'react';
+import { Plus, Edit2, Trash2, Clock, CheckCircle2, Circle, X, Calendar } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import { useSyncData } from '../store';
-import {
-  ChevronDown, ChevronRight, Plus, Edit3, Trash2, UserPlus, Calendar,
-  CheckCircle2, Clock, AlertCircle, Save, X, Users, ClipboardList, Loader2
-} from 'lucide-react';
+import { v4 as uuid } from 'uuid';
+import type { Project } from '../types';
 
-interface Props { project: Project; }
-
-const DEFAULT_PHASES: Omit<ActionPhase, 'id'>[] = [
-  {
-    code: '1', name: 'KHỞI TẠO VÀ LẬP KẾ HOẠCH',
-    subPhases: [
-      { id: '', code: '1.1', name: 'Nghiên cứu khách hàng', tasks: [] },
-      { id: '', code: '1.2', name: 'Nghiên cứu đối thủ', tasks: [] },
-      { id: '', code: '1.3', name: 'Lập kế hoạch khung dự án', tasks: [] },
-      { id: '', code: '1.4', name: 'Thiết lập các tài khoản', tasks: [] },
-      { id: '', code: '1.5', name: 'Phân tích sản phẩm/dịch vụ, đối thủ', tasks: [] },
-    ]
-  },
-  {
-    code: '2', name: 'THIẾT KẾ QUẢNG CÁO',
-    subPhases: [
-      { id: '', code: '2.1', name: 'Tiến hành tối ưu Fanpage', tasks: [] },
-      { id: '', code: '2.2', name: 'Sản xuất Media thực tế & Viết Caption', tasks: [] },
-      { id: '', code: '2.3', name: 'Đánh giá và kiểm duyệt nội dung kỹ thuật', tasks: [] },
-      { id: '', code: '2.4', name: 'Lên kịch bản Seeding (Bình luận mồi)', tasks: [] },
-      { id: '', code: '2.5', name: 'Set up đối tượng quảng cáo Facebook', tasks: [] },
-      { id: '', code: '2.6', name: 'Thiết lập kịch bản Chatbot', tasks: [] },
-    ]
-  },
-  {
-    code: '3', name: 'VẬN HÀNH QUẢNG CÁO',
-    subPhases: [
-      { id: '', code: '3.1', name: 'Set up và vận hành chiến dịch', tasks: [] },
-      { id: '', code: '3.2', name: 'Theo dõi và tối ưu chiến dịch', tasks: [] },
-    ]
-  }
-];
-
-function generateId() { return Date.now().toString(36) + Math.random().toString(36).substring(2); }
-
-function initializePhases(): ActionPhase[] {
-  return DEFAULT_PHASES.map(phase => ({
-    ...phase, id: generateId(),
-    subPhases: phase.subPhases.map(sub => ({ ...sub, id: generateId() }))
-  }));
+export interface Task {
+  id: string;
+  title: string;
+  assignee: string;
+  deadline: string;
+  status: 'todo' | 'in_progress' | 'done';
 }
 
-const statusConfig = {
-  pending: { label: 'Chờ xử lý', color: 'bg-gray-100 text-gray-700', icon: AlertCircle },
-  in_progress: { label: 'Đang thực hiện', color: 'bg-blue-100 text-blue-700', icon: Clock },
-  completed: { label: 'Hoàn thành', color: 'bg-green-100 text-green-700', icon: CheckCircle2 }
-};
+interface ActionPlanProps {
+  project: Project;
+}
 
-export default function ActionPlan({ project }: Props) {
-  const { data: phases, syncData: setPhases, loading } = useSyncData<ActionPhase>(project.id, 'actionPhases', []);
-  const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
-  const [expandedSubPhases, setExpandedSubPhases] = useState<Set<string>>(new Set());
-  
-  const [editingTask, setEditingTask] = useState<{ phaseId: string; subPhaseId: string; task: ActionTask | null } | null>(null);
-  const [taskForm, setTaskForm] = useState<Omit<ActionTask, 'id'>>({ name: '', assignee: '', deadline: '', status: 'pending', notes: '' });
+export default function ActionPlan({ project }: ActionPlanProps) {
+  // 1. GỌI QUYỀN TỪ MA TRẬN
+  const { checkPermission } = useAuth();
+  const canEdit = checkPermission('action_plan', 'edit');
+  const canDelete = checkPermission('action_plan', 'delete');
 
-  const [editingSubPhase, setEditingSubPhase] = useState<{ phaseId: string; subPhase: ActionSubPhase | null } | null>(null);
-  const [subPhaseForm, setSubPhaseForm] = useState({ code: '', name: '' });
+  // 2. KẾT NỐI DỮ LIỆU CLOUD TỪ STORE
+  const { data: tasks, syncData, loading } = useSyncData<Task>(project.id, 'action_tasks', []);
 
-  useEffect(() => {
-    if (!loading) {
-      if (phases.length === 0) {
-        const initialized = initializePhases();
-        setPhases(initialized);
-        setExpandedPhases(new Set(initialized.map(p => p.id)));
-      } else {
-        setExpandedPhases(new Set(phases.map(p => p.id)));
-      }
-    }
-  }, [loading]);
+  // 3. STATE CHO FORM VÀ GIAO DIỆN
+  const [showForm, setShowForm] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [formData, setFormData] = useState<Partial<Task>>({
+    title: '',
+    assignee: '',
+    deadline: '',
+    status: 'todo'
+  });
 
-  const togglePhase = (phaseId: string) => {
-    const newSet = new Set(expandedPhases);
-    newSet.has(phaseId) ? newSet.delete(phaseId) : newSet.add(phaseId);
-    setExpandedPhases(newSet);
-  };
-
-  const toggleSubPhase = (subPhaseId: string) => {
-    const newSet = new Set(expandedSubPhases);
-    newSet.has(subPhaseId) ? newSet.delete(subPhaseId) : newSet.add(subPhaseId);
-    setExpandedSubPhases(newSet);
-  };
-
-  const openAddSubPhase = (phaseId: string) => {
-    const phase = phases.find(p => p.id === phaseId);
-    if (!phase) return;
-    setSubPhaseForm({ code: `${phase.code}.${phase.subPhases.length + 1}`, name: '' });
-    setEditingSubPhase({ phaseId, subPhase: null });
-  };
-
-  const openEditSubPhase = (phaseId: string, subPhase: ActionSubPhase) => {
-    setSubPhaseForm({ code: subPhase.code, name: subPhase.name });
-    setEditingSubPhase({ phaseId, subPhase });
-  };
-
-  const saveSubPhase = async () => {
-    if (!editingSubPhase || !subPhaseForm.name.trim()) return;
-    const newPhases = phases.map(phase => {
-      if (phase.id !== editingSubPhase.phaseId) return phase;
-      if (editingSubPhase.subPhase) {
-        return {
-          ...phase,
-          subPhases: phase.subPhases.map(sub =>
-            sub.id === editingSubPhase.subPhase!.id ? { ...sub, code: subPhaseForm.code, name: subPhaseForm.name } : sub
-          )
-        };
-      }
-      return { ...phase, subPhases: [...phase.subPhases, { id: generateId(), code: subPhaseForm.code, name: subPhaseForm.name, tasks: [] }] };
-    });
-    await setPhases(newPhases);
-    setEditingSubPhase(null);
-  };
-
-  const deleteSubPhase = async (phaseId: string, subPhaseId: string) => {
-    if (!confirm('Xóa mục này và tất cả công việc bên trong?')) return;
-    await setPhases(phases.map(phase => phase.id === phaseId ? { ...phase, subPhases: phase.subPhases.filter(sub => sub.id !== subPhaseId) } : phase));
-  };
-
-  const openAddTask = (phaseId: string, subPhaseId: string) => {
-    setTaskForm({ name: '', assignee: '', deadline: '', status: 'pending', notes: '' });
-    setEditingTask({ phaseId, subPhaseId, task: null });
-  };
-
-  const openEditTask = (phaseId: string, subPhaseId: string, task: ActionTask) => {
-    setTaskForm({ name: task.name, assignee: task.assignee, deadline: task.deadline, status: task.status, notes: task.notes });
-    setEditingTask({ phaseId, subPhaseId, task });
-  };
-
-  const saveTask = async () => {
-    if (!editingTask || !taskForm.name.trim()) return;
-    const newPhases = phases.map(phase => {
-      if (phase.id !== editingTask.phaseId) return phase;
-      return {
-        ...phase,
-        subPhases: phase.subPhases.map(sub => {
-          if (sub.id !== editingTask.subPhaseId) return sub;
-          if (editingTask.task) {
-            return { ...sub, tasks: sub.tasks.map(t => t.id === editingTask.task!.id ? { ...t, ...taskForm } : t) };
-          }
-          return { ...sub, tasks: [...sub.tasks, { id: generateId(), ...taskForm }] };
-        })
-      };
-    });
-    await setPhases(newPhases);
+  // 4. CÁC HÀM XỬ LÝ (CRUD)
+  const handleOpenAdd = () => {
+    if (!canEdit) return;
+    setFormData({ title: '', assignee: '', deadline: '', status: 'todo' });
     setEditingTask(null);
+    setShowForm(true);
   };
 
-  const deleteTask = async (phaseId: string, subPhaseId: string, taskId: string) => {
-    if (!confirm('Xóa công việc này?')) return;
-    await setPhases(phases.map(phase => phase.id === phaseId ? {
-      ...phase, subPhases: phase.subPhases.map(sub => sub.id === subPhaseId ? { ...sub, tasks: sub.tasks.filter(t => t.id !== taskId) } : sub)
-    } : phase));
+  const handleOpenEdit = (task: Task) => {
+    if (!canEdit) return;
+    setFormData(task);
+    setEditingTask(task);
+    setShowForm(true);
   };
 
-  const toggleTaskStatus = async (phaseId: string, subPhaseId: string, taskId: string) => {
-    const statusOrder: ActionTask['status'][] = ['pending', 'in_progress', 'completed'];
-    await setPhases(phases.map(phase => phase.id === phaseId ? {
-      ...phase, subPhases: phase.subPhases.map(sub => sub.id === subPhaseId ? {
-        ...sub, tasks: sub.tasks.map(t => {
-          if (t.id !== taskId) return t;
-          const nextIdx = (statusOrder.indexOf(t.status) + 1) % statusOrder.length;
-          return { ...t, status: statusOrder[nextIdx] };
-        })
-      } : sub)
-    } : phase));
+  const handleSave = async () => {
+    if (!canEdit || !formData.title?.trim()) return;
+
+    let newTasks;
+    if (editingTask) {
+      newTasks = tasks.map(t => t.id === editingTask.id ? { ...t, ...formData } as Task : t);
+    } else {
+      const newTask: Task = {
+        id: uuid(),
+        title: formData.title,
+        assignee: formData.assignee || 'Chưa phân công',
+        deadline: formData.deadline || new Date().toISOString().split('T')[0],
+        status: formData.status as 'todo' | 'in_progress' | 'done'
+      };
+      newTasks = [newTask, ...tasks];
+    }
+
+    await syncData(newTasks);
+    setShowForm(false);
   };
 
+  const handleDelete = async (id: string) => {
+    if (!canDelete) return;
+    if (!confirm('Bạn có chắc chắn muốn xóa công việc này?')) return;
+    
+    const newTasks = tasks.filter(t => t.id !== id);
+    await syncData(newTasks);
+  };
+
+  const toggleStatus = async (task: Task) => {
+    // Nếu không có quyền Edit thì không cho phép click đổi trạng thái
+    if (!canEdit) return;
+
+    const nextStatus = 
+      task.status === 'todo' ? 'in_progress' : 
+      task.status === 'in_progress' ? 'done' : 'todo';
+      
+    const newTasks = tasks.map(t => t.id === task.id ? { ...t, status: nextStatus } : t);
+    await syncData(newTasks);
+  };
+
+  // Màn hình Loading
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-gray-500">
-        <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-500" />
-        <p>Đang đồng bộ Kế hoạch hành động...</p>
-      </div>
-    );
+    return <div className="p-8 text-center text-gray-500">Đang tải dữ liệu Kế hoạch...</div>;
   }
 
-  const stats = phases.reduce((acc, phase) => {
-    phase.subPhases.forEach(sub => {
-      sub.tasks.forEach(task => {
-        acc.total++;
-        if (task.status === 'completed') acc.completed++;
-        else if (task.status === 'in_progress') acc.inProgress++;
-        else acc.pending++;
-      });
-    });
-    return acc;
-  }, { total: 0, completed: 0, inProgress: 0, pending: 0 });
-
-  const phaseColors = [
-    { bg: 'bg-blue-600', light: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700' },
-    { bg: 'bg-amber-500', light: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700' },
-    { bg: 'bg-green-600', light: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' }
-  ];
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* HEADER BẢNG */}
+      <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <ClipboardList className="w-7 h-7 text-blue-600" /> Action Plan - Tiến Độ Dự Án
-          </h2>
+          <h2 className="text-xl font-bold text-gray-800">Kế hoạch Hành động (Action Plan)</h2>
+          <p className="text-sm text-gray-500 mt-1">Quản lý các đầu việc chi tiết của dự án {project.name}</p>
         </div>
+        
+        {/* CHỈ HIỂN THỊ NÚT THÊM NẾU CÓ QUYỀN EDIT */}
+        {canEdit && (
+          <button 
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-5 py-2.5 rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm font-medium text-sm"
+          >
+            <Plus className="w-4 h-4" /> Thêm Công Việc
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><ClipboardList className="w-5 h-5 text-gray-600" /></div><div><p className="text-2xl font-bold text-gray-900">{stats.total}</p><p className="text-sm text-gray-500">Tổng công việc</p></div></div></div>
-        <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center"><CheckCircle2 className="w-5 h-5 text-green-600" /></div><div><p className="text-2xl font-bold text-green-600">{stats.completed}</p><p className="text-sm text-gray-500">Hoàn thành</p></div></div></div>
-        <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-sm"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center"><Clock className="w-5 h-5 text-blue-600" /></div><div><p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p><p className="text-sm text-gray-500">Đang thực hiện</p></div></div></div>
-        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center"><AlertCircle className="w-5 h-5 text-gray-500" /></div><div><p className="text-2xl font-bold text-gray-600">{stats.pending}</p><p className="text-sm text-gray-500">Chờ xử lý</p></div></div></div>
-      </div>
-
-      <div className="space-y-4">
-        {phases.map((phase, phaseIdx) => {
-          const colors = phaseColors[phaseIdx] || phaseColors[0];
-          const isExpanded = expandedPhases.has(phase.id);
-          const phaseStats = phase.subPhases.reduce((acc, sub) => {
-            sub.tasks.forEach(t => { acc.total++; if (t.status === 'completed') acc.completed++; }); return acc;
-          }, { total: 0, completed: 0 });
-
-          return (
-            <div key={phase.id} className={`bg-white rounded-xl border ${colors.border} shadow-sm overflow-hidden`}>
-              <div className={`${colors.bg} text-white px-5 py-4 cursor-pointer flex items-center justify-between`} onClick={() => togglePhase(phase.id)}>
-                <div className="flex items-center gap-3">
-                  {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                  <span className="font-bold text-lg">{phase.code}. {phase.name}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="bg-white/20 px-3 py-1 rounded-full text-sm">{phaseStats.completed}/{phaseStats.total} hoàn thành</span>
-                  <button onClick={(e) => { e.stopPropagation(); openAddSubPhase(phase.id); }} className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg"><Plus className="w-4 h-4" /></button>
-                </div>
-              </div>
-
-              {isExpanded && (
-                <div className="divide-y divide-gray-100">
-                  {phase.subPhases.map(subPhase => {
-                    const isSubExpanded = expandedSubPhases.has(subPhase.id);
-                    const subStats = { total: subPhase.tasks.length, completed: subPhase.tasks.filter(t => t.status === 'completed').length };
-
-                    return (
-                      <div key={subPhase.id} className={`${colors.light}`}>
-                        <div className="px-5 py-3 cursor-pointer flex items-center justify-between hover:bg-white/50" onClick={() => toggleSubPhase(subPhase.id)}>
-                          <div className="flex items-center gap-3">
-                            {isSubExpanded ? <ChevronDown className={`w-4 h-4 ${colors.text}`} /> : <ChevronRight className={`w-4 h-4 ${colors.text}`} />}
-                            <span className={`font-semibold ${colors.text}`}>{subPhase.code}. {subPhase.name}</span>
-                            {subStats.total > 0 && <span className="text-xs bg-white px-2 py-0.5 rounded-full text-gray-600">{subStats.completed}/{subStats.total}</span>}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={(e) => { e.stopPropagation(); openAddTask(phase.id, subPhase.id); }} className={`p-1.5 ${colors.text} hover:bg-white rounded-lg`}><UserPlus className="w-4 h-4" /></button>
-                            <button onClick={(e) => { e.stopPropagation(); openEditSubPhase(phase.id, subPhase); }} className="p-1.5 text-gray-500 hover:bg-white rounded-lg"><Edit3 className="w-4 h-4" /></button>
-                            <button onClick={(e) => { e.stopPropagation(); deleteSubPhase(phase.id, subPhase.id); }} className="p-1.5 text-red-500 hover:bg-white rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                          </div>
-                        </div>
-
-                        {isSubExpanded && (
-                          <div className="px-5 pb-4">
-                            {subPhase.tasks.length === 0 ? (
-                              <div className="bg-white rounded-lg p-4 text-center text-gray-500 border border-dashed">
-                                <p>Chưa có công việc nào</p>
-                                <button onClick={() => openAddTask(phase.id, subPhase.id)} className={`mt-2 text-sm ${colors.text} hover:underline`}>+ Thêm công việc</button>
-                              </div>
-                            ) : (
-                              <div className="bg-white rounded-lg border overflow-hidden">
-                                <table className="w-full text-sm">
-                                  <thead className="bg-gray-50 border-b">
-                                    <tr>
-                                      <th className="px-4 py-2 text-left text-gray-600">#</th>
-                                      <th className="px-4 py-2 text-left text-gray-600">Công việc</th>
-                                      <th className="px-4 py-2 text-left text-gray-600">Phân công</th>
-                                      <th className="px-4 py-2 text-left text-gray-600">Deadline</th>
-                                      <th className="px-4 py-2 text-left text-gray-600">Trạng thái</th>
-                                      <th className="px-4 py-2 text-left text-gray-600">Ghi chú</th>
-                                      <th className="px-4 py-2 text-center text-gray-600">Thao tác</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                    {subPhase.tasks.map((task, idx) => {
-                                      const StatusIcon = statusConfig[task.status].icon;
-                                      const isOverdue = task.deadline && new Date(task.deadline) < new Date() && task.status !== 'completed';
-                                      
-                                      return (
-                                        <tr key={task.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50' : ''}`}>
-                                          <td className="px-4 py-2 text-gray-500">{idx + 1}</td>
-                                          <td className="px-4 py-2 font-medium">{task.name}</td>
-                                          <td className="px-4 py-2">{task.assignee || <span className="text-gray-400 italic">Chưa có</span>}</td>
-                                          <td className="px-4 py-2">{task.deadline ? new Date(task.deadline).toLocaleDateString('vi-VN') : '-'}</td>
-                                          <td className="px-4 py-2">
-                                            <button onClick={() => toggleTaskStatus(phase.id, subPhase.id, task.id)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${statusConfig[task.status].color}`}>
-                                              <StatusIcon className="w-3 h-3" /> {statusConfig[task.status].label}
-                                            </button>
-                                          </td>
-                                          <td className="px-4 py-2 text-gray-600">{task.notes}</td>
-                                          <td className="px-4 py-2">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button onClick={() => openEditTask(phase.id, subPhase.id, task)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit3 className="w-4 h-4" /></button>
-                                              <button onClick={() => deleteTask(phase.id, subPhase.id, task.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modals Add/Edit */}
-      {editingSubPhase && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-bold mb-4">{editingSubPhase.subPhase ? 'Sửa mục' : 'Thêm mục'}</h3>
-            <div className="space-y-4">
-              <input value={subPhaseForm.code} onChange={(e) => setSubPhaseForm({ ...subPhaseForm, code: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Mã (VD: 1.6)" />
-              <input value={subPhaseForm.name} onChange={(e) => setSubPhaseForm({ ...subPhaseForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Tên mục" />
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setEditingSubPhase(null)} className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg">Hủy</button>
-              <button onClick={saveSubPhase} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Lưu</button>
-            </div>
+      {/* DANH SÁCH CÔNG VIỆC */}
+      <div className="p-6">
+        {tasks.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <p className="text-gray-500">Chưa có công việc nào trong kế hoạch.</p>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="space-y-3">
+            {tasks.map(task => (
+              <div 
+                key={task.id} 
+                className={`group flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-xl border transition-all ${
+                  task.status === 'done' ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-start gap-4 mb-4 sm:mb-0 w-full sm:w-auto">
+                  {/* Nút check trạng thái: Bị disable (không có pointer-events) nếu !canEdit */}
+                  <button 
+                    onClick={() => toggleStatus(task)}
+                    className={`mt-1 shrink-0 ${canEdit ? 'cursor-pointer hover:scale-110 transition-transform' : 'cursor-default opacity-80'}`}
+                  >
+                    {task.status === 'done' ? (
+                      <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+                    ) : task.status === 'in_progress' ? (
+                      <Clock className="w-6 h-6 text-amber-500" />
+                    ) : (
+                      <Circle className="w-6 h-6 text-gray-300" />
+                    )}
+                  </button>
 
-      {editingTask && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
-            <h3 className="text-lg font-bold mb-4">{editingTask.task ? 'Sửa công việc' : 'Thêm công việc'}</h3>
-            <div className="space-y-4">
-              <input value={taskForm.name} onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Tên công việc" />
-              <div className="grid grid-cols-2 gap-4">
-                <input value={taskForm.assignee} onChange={(e) => setTaskForm({ ...taskForm, assignee: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Người thực hiện" />
-                <input type="date" value={taskForm.deadline} onChange={(e) => setTaskForm({ ...taskForm, deadline: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
+                  <div>
+                    <h3 className={`font-semibold text-base ${task.status === 'done' ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
+                      {task.title}
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
+                      <span className="flex items-center gap-1.5 text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
+                        <span className="w-4 h-4 rounded-full bg-blue-200 text-blue-700 flex items-center justify-center text-[10px] font-bold">
+                          {task.assignee.charAt(0).toUpperCase()}
+                        </span>
+                        {task.assignee}
+                      </span>
+                      <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md ${
+                        new Date(task.deadline) < new Date() && task.status !== 'done' 
+                        ? 'bg-red-50 text-red-600' 
+                        : 'bg-gray-50 text-gray-500'
+                      }`}>
+                        <Calendar className="w-3.5 h-3.5" />
+                        {new Date(task.deadline).toLocaleDateString('vi-VN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* KHU VỰC NÚT THAO TÁC (CHỈ HIỆN KHI CÓ QUYỀN) */}
+                {(canEdit || canDelete) && (
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 mt-3 sm:mt-0">
+                    {canEdit && (
+                      <button 
+                        onClick={() => handleOpenEdit(task)}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Chỉnh sửa"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button 
+                        onClick={() => handleDelete(task.id)}
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Xóa công việc"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-              <select value={taskForm.status} onChange={(e) => setTaskForm({ ...taskForm, status: e.target.value as ActionTask['status'] })} className="w-full px-4 py-2 border rounded-lg">
-                <option value="pending">Chờ xử lý</option>
-                <option value="in_progress">Đang thực hiện</option>
-                <option value="completed">Hoàn thành</option>
-              </select>
-              <textarea value={taskForm.notes} onChange={(e) => setTaskForm({ ...taskForm, notes: e.target.value })} className="w-full px-4 py-2 border rounded-lg" placeholder="Ghi chú" />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* MODAL THÊM / SỬA (CHỈ MỞ KHI CÓ QUYỀN EDIT) */}
+      {showForm && canEdit && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-lg text-gray-800">
+                {editingTask ? 'Chỉnh sửa Công việc' : 'Thêm Công việc mới'}
+              </h3>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setEditingTask(null)} className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg">Hủy</button>
-              <button onClick={saveTask} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Lưu</button>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên công việc *</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={e => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="Nhập tên công việc..."
+                  autoFocus
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Người phụ trách</label>
+                  <input
+                    type="text"
+                    value={formData.assignee}
+                    onChange={e => setFormData({ ...formData, assignee: e.target.value })}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    placeholder="VD: Nguyễn Văn A"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Hạn chót (Deadline)</label>
+                  <input
+                    type="date"
+                    value={formData.deadline}
+                    onChange={e => setFormData({ ...formData, deadline: e.target.value })}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
+                <select
+                  value={formData.status}
+                  onChange={e => setFormData({ ...formData, status: e.target.value as any })}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  <option value="todo">Cần làm (To do)</option>
+                  <option value="in_progress">Đang làm (In Progress)</option>
+                  <option value="done">Hoàn thành (Done)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowForm(false)}
+                className="px-5 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-xl hover:bg-gray-50"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                onClick={handleSave}
+                disabled={!formData.title?.trim()}
+                className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editingTask ? 'Lưu thay đổi' : 'Tạo công việc'}
+              </button>
             </div>
           </div>
         </div>
