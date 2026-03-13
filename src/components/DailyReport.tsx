@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSyncData } from '../store';
-import { FileText, Plus, Trash2, X, Edit2 } from 'lucide-react';
+import { FileText, Plus, Trash2, X, Edit2, Calendar, User, Clock } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 
 export interface Report {
@@ -21,7 +21,6 @@ export default function DailyReport({ projectId }: ReportProps) {
   const canEdit = checkPermission('daily_report', 'edit');
   const canDelete = checkPermission('daily_report', 'delete');
 
-  // Lấy dữ liệu THẬT từ Database
   const { data: reports, syncData, loading } = useSyncData<Report>(projectId, 'daily_reports', []);
 
   const [showForm, setShowForm] = useState(false);
@@ -53,7 +52,7 @@ export default function DailyReport({ projectId }: ReportProps) {
         id: uuid(),
         title: formData.title,
         content: formData.content,
-        author: user?.user_metadata?.full_name || user?.email || 'Người dùng',
+        author: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Người dùng',
         createdAt: new Date().toISOString()
       };
       newReports = [newReport, ...reports];
@@ -69,75 +68,146 @@ export default function DailyReport({ projectId }: ReportProps) {
     await syncData(reports.filter(r => r.id !== id));
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Đang tải báo cáo...</div>;
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-gray-500 font-medium">Đang tải dữ liệu báo cáo...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Hàng ngày</h2>
+      {/* HEADER TỔNG QUAN */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <FileText className="w-7 h-7 text-emerald-500" /> Báo cáo Hàng ngày
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">Theo dõi tiến độ và nhật ký công việc của team</p>
+        </div>
+        
         {canEdit && (
-          <button onClick={handleOpenAdd} className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-5 py-2.5 rounded-xl hover:shadow-lg transition-all font-medium text-sm">
-            <Plus className="w-4 h-4" /> Viết báo cáo
+          <button 
+            onClick={handleOpenAdd} 
+            className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-6 py-3 rounded-xl hover:from-emerald-600 hover:to-teal-600 shadow-md hover:shadow-lg transition-all font-semibold text-sm transform hover:-translate-y-0.5"
+          >
+            <Plus className="w-5 h-5" /> Viết báo cáo mới
           </button>
         )}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      {/* DANH SÁCH BÁO CÁO DẠNG FEED/CARD */}
+      <div className="space-y-6">
         {reports.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">Chưa có báo cáo nào.</p>
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
+            <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-10 h-10 text-gray-300" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-700 mb-1">Chưa có báo cáo nào</h3>
+            <p className="text-gray-500">Hãy là người đầu tiên cập nhật tình hình dự án!</p>
+          </div>
         ) : (
-          <div className="space-y-6">
-            {reports.map(report => (
-              <div key={report.id} className="flex justify-between items-start border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
-                    <FileText className="w-5 h-5" />
+          reports.map(report => (
+            <div key={report.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow group">
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0 pr-4">
+                  <h4 className="text-xl font-bold text-gray-800 mb-3 group-hover:text-emerald-600 transition-colors">{report.title}</h4>
+                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 mb-4 text-gray-700 leading-relaxed whitespace-pre-wrap">
+                    {report.content}
                   </div>
-                  <div>
-                    <h4 className="font-bold text-gray-800">{report.title}</h4>
-                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{report.content}</p>
-                    <p className="text-xs text-gray-400 mt-2">Đăng bởi: {report.author} • {new Date(report.createdAt).toLocaleString('vi-VN')}</p>
+                  <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-gray-500">
+                    <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg">
+                      <User className="w-4 h-4" /> {report.author}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4" /> {new Date(report.createdAt).toLocaleDateString('vi-VN')}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="w-4 h-4" /> {new Date(report.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
                 </div>
-                
-                <div className="flex items-center gap-2">
+
+                {/* NÚT THAO TÁC (Chỉ hiện khi có quyền) */}
+                <div className="flex items-center gap-2 shrink-0">
                   {canEdit && (
-                    <button onClick={() => handleOpenEdit(report)} className="text-gray-400 hover:text-blue-500 p-2 rounded-lg hover:bg-blue-50 transition-colors">
-                      <Edit2 className="w-4 h-4" />
+                    <button 
+                      onClick={() => handleOpenEdit(report)} 
+                      className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                      title="Chỉnh sửa"
+                    >
+                      <Edit2 className="w-5 h-5" />
                     </button>
                   )}
                   {canDelete && (
-                    <button onClick={() => handleDelete(report.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors">
-                      <Trash2 className="w-4 h-4" />
+                    <button 
+                      onClick={() => handleDelete(report.id)} 
+                      className="p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                      title="Xóa báo cáo"
+                    >
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   )}
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))
         )}
       </div>
 
+      {/* MODAL FORM VIẾT BÁO CÁO MƯỢT MÀ */}
       {showForm && canEdit && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-lg text-gray-800">{editingId ? 'Sửa báo cáo' : 'Viết báo cáo mới'}</h3>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-8 py-5 border-b border-gray-100 flex justify-between items-center bg-white">
+              <h3 className="font-bold text-xl text-gray-800 flex items-center gap-2">
+                <FileText className="w-6 h-6 text-emerald-500" />
+                {editingId ? 'Chỉnh sửa báo cáo' : 'Viết báo cáo mới'}
+              </h3>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 p-2 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="p-6 space-y-4">
+            
+            <div className="p-8 space-y-6 bg-gray-50/30">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề</label>
-                <input value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="VD: Báo cáo ngày..." autoFocus />
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Tiêu đề báo cáo <span className="text-red-500">*</span></label>
+                <input 
+                  value={formData.title} 
+                  onChange={e => setFormData({ ...formData, title: e.target.value })} 
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all shadow-sm text-lg font-medium" 
+                  placeholder="VD: Báo cáo kết quả chạy Ads ngày 15/10..." 
+                  autoFocus 
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nội dung chi tiết</label>
-                <textarea value={formData.content} onChange={e => setFormData({ ...formData, content: e.target.value })} rows={5} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Nhập nội dung báo cáo..." />
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nội dung chi tiết</label>
+                <textarea 
+                  value={formData.content} 
+                  onChange={e => setFormData({ ...formData, content: e.target.value })} 
+                  rows={8} 
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all shadow-sm leading-relaxed" 
+                  placeholder="Mô tả chi tiết công việc đã hoàn thành, kết quả đạt được, vấn đề tồn đọng..." 
+                />
               </div>
             </div>
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
-              <button onClick={() => setShowForm(false)} className="px-5 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-xl">Hủy</button>
-              <button onClick={handleSave} disabled={!formData.title.trim()} className="px-5 py-2 text-sm font-medium text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50">Lưu báo cáo</button>
+
+            <div className="px-8 py-5 bg-white border-t border-gray-100 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowForm(false)} 
+                className="px-6 py-2.5 text-sm font-semibold text-gray-600 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                onClick={handleSave} 
+                disabled={!formData.title.trim()} 
+                className="px-8 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all"
+              >
+                {editingId ? 'Cập nhật' : 'Đăng báo cáo'}
+              </button>
             </div>
           </div>
         </div>
