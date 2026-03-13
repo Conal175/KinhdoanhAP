@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import type { Project, Task, ActionPhase, ProductAdvantage, CustomerInfo, PainPoint, FAQ, Competitor, DailyLog, Fanpage, ContentAd } from './types';
 
 const KEYS = {
@@ -26,31 +25,18 @@ function save<T>(key: string, data: T[]) {
   localStorage.setItem(key, JSON.stringify(data));
 }
 
-// Projects (Cung cấp cho App.tsx)
+// Projects
 export const getProjects = (): Project[] => load(KEYS.projects);
 export const saveProjects = (p: Project[]) => save(KEYS.projects, p);
-
-export const fetchProjects = async (): Promise<Project[]> => {
-  return getProjects();
+export const fetchProjects = async (): Promise<Project[]> => getProjects();
+export const insertProject = async (p: Project): Promise<boolean> => {
+  try { saveProjects([p, ...getProjects()]); return true; } catch { return false; }
 };
-
-export const insertProject = async (project: Project): Promise<boolean> => {
-  try {
-    const projects = getProjects();
-    saveProjects([project, ...projects]);
-    return true;
-  } catch { return false; }
-};
-
 export const removeProject = async (id: string): Promise<boolean> => {
-  try {
-    const projects = getProjects();
-    saveProjects(projects.filter(p => p.id !== id));
-    return true;
-  } catch { return false; }
+  try { saveProjects(getProjects().filter(p => p.id !== id)); return true; } catch { return false; }
 };
 
-// Các hàm cho từng trang chức năng
+// Data for components
 export const getActionPhases = (pid: string): ActionPhase[] => load<ActionPhase>(`${KEYS.actionPhases}_${pid}`);
 export const saveActionPhases = (pid: string, phases: ActionPhase[]) => save(`${KEYS.actionPhases}_${pid}`, phases);
 
@@ -101,22 +87,3 @@ export const saveContentAds = (pid: string, items: ContentAd[]) => {
   const all = load<ContentAd>(KEYS.contentAds).filter(c => c.projectId !== pid);
   save(KEYS.contentAds, [...all, ...items]);
 };
-
-// Hook dự phòng cho các trang dùng useSyncData
-export function useSyncData<T>(projectId: string, table: string, defaultData: T[]) {
-  const [data, setData] = useState<T[]>(defaultData);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const key = `${table}_${projectId}`;
-    const raw = localStorage.getItem(key);
-    if (raw) setData(JSON.parse(raw));
-    setLoading(false);
-  }, [projectId, table]);
-
-  const syncData = async (newData: T[]) => {
-    setData(newData);
-    localStorage.setItem(`${table}_${projectId}`, JSON.stringify(newData));
-  };
-  return { data, syncData, loading };
-}
