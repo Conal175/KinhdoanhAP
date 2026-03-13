@@ -74,52 +74,145 @@ export default function ActionPlan({ project }: Props) {
 
   const handleSave = (newPhases: ActionPhase[]) => { setPhases(newPhases); saveActionPhases(project.id, newPhases); };
 
-  // ... (Giữ nguyên logic các hàm saveSubPhase, saveTask, toggleTaskStatus như file cũ)
+  const stats = phases.reduce((acc, phase) => {
+    phase.subPhases.forEach(sub => {
+      sub.tasks.forEach(task => {
+        acc.total++;
+        if (task.status === 'completed') acc.completed++;
+        else if (task.status === 'in_progress') acc.inProgress++;
+        else acc.pending++;
+      });
+    });
+    return acc;
+  }, { total: 0, completed: 0, inProgress: 0, pending: 0 });
+
+  const phaseColors = [
+    { bg: 'bg-blue-600', light: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700' },
+    { bg: 'bg-amber-500', light: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700' },
+    { bg: 'bg-green-600', light: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' }
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header & Stats Cards giữ nguyên giao diện cũ */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <ClipboardList className="w-7 h-7 text-blue-600" /> Action Plan - Tiến Độ Dự Án
+            <ClipboardList className="w-7 h-7 text-blue-600" />
+            Action Plan - Tiến Độ Dự Án
           </h2>
+          <p className="text-gray-600 mt-1">Phân công công việc và kiểm soát deadline</p>
         </div>
       </div>
 
-      {/* Danh sách các Giai đoạn */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
+              <ClipboardList className="w-5 h-5 text-gray-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+              <p className="text-sm text-gray-500">Tổng công việc</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm">
+          <div className="flex items-center gap-3 text-green-600">
+             <CheckCircle2 className="w-5 h-5" />
+             <div><p className="text-2xl font-bold">{stats.completed}</p><p className="text-sm text-gray-500">Hoàn thành</p></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-blue-200 shadow-sm">
+          <div className="flex items-center gap-3 text-blue-600">
+             <Clock className="w-5 h-5" />
+             <div><p className="text-2xl font-bold">{stats.inProgress}</p><p className="text-sm text-gray-500">Đang làm</p></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-3 text-gray-500">
+             <AlertCircle className="w-5 h-5" />
+             <div><p className="text-2xl font-bold">{stats.pending}</p><p className="text-sm text-gray-500">Chờ xử lý</p></div>
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-4">
         {phases.map((phase, phaseIdx) => {
+          const colors = phaseColors[phaseIdx] || phaseColors[0];
           const isExpanded = expandedPhases.has(phase.id);
-          const colors = [{ bg: 'bg-blue-600' }, { bg: 'bg-amber-500' }, { bg: 'bg-green-600' }][phaseIdx] || { bg: 'bg-blue-600' };
+          const phaseStats = phase.subPhases.reduce((acc, sub) => {
+            sub.tasks.forEach(t => { acc.total++; if (t.status === 'completed') acc.completed++; });
+            return acc;
+          }, { total: 0, completed: 0 });
 
           return (
-            <div key={phase.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+            <div key={phase.id} className={`bg-white rounded-xl border ${colors.border} shadow-sm overflow-hidden`}>
               <div className={`${colors.bg} text-white px-5 py-4 cursor-pointer flex items-center justify-between`} onClick={() => {
                 const n = new Set(expandedPhases); n.has(phase.id) ? n.delete(phase.id) : n.add(phase.id); setExpandedPhases(n);
               }}>
-                <span className="font-bold text-lg">{phase.code}. {phase.name}</span>
-                <div className="flex items-center gap-2">
-                   {canEdit && <button onClick={(e) => { e.stopPropagation(); /* Mở form thêm SubPhase */ }} className="p-1 bg-white/20 rounded"><Plus className="w-4 h-4"/></button>}
-                   {isExpanded ? <ChevronDown /> : <ChevronRight />}
+                <div className="flex items-center gap-3">
+                  {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                  <span className="font-bold text-lg">{phase.code}. {phase.name}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="bg-white/20 px-3 py-1 rounded-full text-sm">{phaseStats.completed}/{phaseStats.total} hoàn thành</span>
+                  {canEdit && (
+                    <button onClick={(e) => { e.stopPropagation(); setSubPhaseForm({ code: `${phase.code}.${phase.subPhases.length + 1}`, name: '' }); setEditingSubPhase({ phaseId: phase.id, subPhase: null }); }} className="p-1 bg-white/20 hover:bg-white/30 rounded">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {isExpanded && phase.subPhases.map(sub => (
-                <div key={sub.id} className="border-t">
-                  <div className="px-5 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer" onClick={() => {
-                    const n = new Set(expandedSubPhases); n.has(sub.id) ? n.delete(sub.id) : n.add(sub.id); setExpandedSubPhases(n);
-                  }}>
-                    <span className="font-semibold text-blue-700">{sub.code}. {sub.name}</span>
-                    <div className="flex gap-2">
-                      {canEdit && <button onClick={(e) => { e.stopPropagation(); /* Mở form thêm Task */ }} className="text-blue-600"><UserPlus className="w-4 h-4" /></button>}
-                      {canEdit && <button className="text-gray-500"><Edit3 className="w-4 h-4" /></button>}
-                      {canDelete && <button className="text-red-500"><Trash2 className="w-4 h-4" /></button>}
+              {isExpanded && phase.subPhases.map(subPhase => {
+                const isSubExpanded = expandedSubPhases.has(subPhase.id);
+                return (
+                  <div key={subPhase.id} className={`${colors.light}`}>
+                    <div className="px-5 py-3 flex items-center justify-between hover:bg-white/50 cursor-pointer" onClick={() => {
+                      const n = new Set(expandedSubPhases); n.has(subPhase.id) ? n.delete(subPhase.id) : n.add(subPhase.id); setExpandedSubPhases(n);
+                    }}>
+                      <span className={`font-semibold ${colors.text}`}>{subPhase.code}. {subPhase.name}</span>
+                      <div className="flex items-center gap-2">
+                        {canEdit && <button onClick={(e) => { e.stopPropagation(); setEditingTask({ phaseId: phase.id, subPhaseId: subPhase.id, task: null }); setTaskForm({name:'', assignee:'', deadline:'', status:'pending', notes:''}); }} className={`${colors.text}`}><UserPlus className="w-4 h-4"/></button>}
+                        {canEdit && <button onClick={(e) => { e.stopPropagation(); setSubPhaseForm({code: subPhase.code, name: subPhase.name}); setEditingSubPhase({phaseId: phase.id, subPhase}); }} className="text-gray-500"><Edit3 className="w-4 h-4"/></button>}
+                        {canDelete && <button onClick={(e) => { e.stopPropagation(); if(confirm('Xóa?')) handleSave(phases.map(p => p.id === phase.id ? {...p, subPhases: p.subPhases.filter(s => s.id !== subPhase.id)} : p)); }} className="text-red-500"><Trash2 className="w-4 h-4"/></button>}
+                      </div>
                     </div>
+                    {isSubExpanded && (
+                      <div className="px-5 pb-4 overflow-x-auto">
+                        <table className="w-full text-sm border-collapse bg-white rounded-lg overflow-hidden border border-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr><th className="p-2 border text-left">Công việc</th><th className="p-2 border text-left">Người làm</th><th className="p-2 border text-left">Deadline</th><th className="p-2 border text-center">Trạng thái</th><th className="p-2 border text-center">#</th></tr>
+                          </thead>
+                          <tbody>
+                            {subPhase.tasks.map(t => {
+                               const StatusIcon = statusConfig[t.status].icon;
+                               return (
+                                 <tr key={t.id} className="hover:bg-gray-50">
+                                   <td className="p-2 border font-medium">{t.name}</td>
+                                   <td className="p-2 border text-center"><span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs font-bold">{t.assignee}</span></td>
+                                   <td className="p-2 border text-center text-gray-500">{t.deadline}</td>
+                                   <td className="p-2 border text-center">
+                                      <button disabled={!canEdit} onClick={() => {
+                                        const statusOrder: ActionTask['status'][] = ['pending', 'in_progress', 'completed'];
+                                        handleSave(phases.map(p => p.id === phase.id ? {...p, subPhases: p.subPhases.map(s => s.id === subPhase.id ? {...s, tasks: s.tasks.map(task => task.id === t.id ? {...task, status: statusOrder[(statusOrder.indexOf(task.status)+1)%3]} : task)} : s)} : p));
+                                      }} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${statusConfig[t.status].color}`}><StatusIcon className="w-3 h-3" />{statusConfig[t.status].label}</button>
+                                   </td>
+                                   <td className="p-2 border text-center">
+                                      <div className="flex gap-1 justify-center">
+                                        {canEdit && <button onClick={() => { setTaskForm(t); setEditingTask({phaseId: phase.id, subPhaseId: subPhase.id, task: t}); }} className="text-blue-600"><Edit3 className="w-4 h-4"/></button>}
+                                        {canDelete && <button onClick={() => { if(confirm('Xóa?')) handleSave(phases.map(p => p.id === phase.id ? {...p, subPhases: p.subPhases.map(s => s.id === subPhase.id ? {...s, tasks: s.tasks.filter(task => task.id !== t.id)} : s)} : p)); }} className="text-red-500"><Trash2 className="w-4 h-4"/></button>}
+                                      </div>
+                                   </td>
+                                 </tr>
+                               );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
-                  {/* Bảng công việc (Task Table) ẩn/hiện nút Edit/Delete bằng canEdit/canDelete */}
-                </div>
-              ))}
+                ))}
             </div>
           );
         })}
