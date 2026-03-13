@@ -28,6 +28,10 @@ export const insertProject = async (project: Project): Promise<boolean> => {
     const { error } = await supabase.from('projects').insert([{
       id: project.id, name: project.name, description: project.description, created_at: project.createdAt
     }]);
+    
+    if (error) {
+      alert(`Lỗi tạo dự án từ DB: ${error.message}`);
+    }
     return !error;
   } catch (err) {
     return false;
@@ -71,14 +75,22 @@ export const saveProjectData = async <T>(pid: string, key: string, items: T[]) =
   try {
     const supabase = getSupabase();
     if (!supabase) return;
-    await supabase
+    
+    const { error } = await supabase
       .from('project_data')
       .upsert({
         project_id: pid,
         data_key: key,
         data_value: items,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'project_id, data_key' });
+      }, { onConflict: 'project_id,data_key' }); // CỰC KỲ QUAN TRỌNG: Đã xóa khoảng trắng ở đây
+
+    // BẮT VÀ HIỂN THỊ LỖI NẾU DB CHẶN
+    if (error) {
+      console.error("Supabase Save Error:", error);
+      alert(`❌ LỖI TỪ DATABASE (SUPABASE):\n${error.message}\n\nHệ thống từ chối lưu dữ liệu. Vui lòng kiểm tra lại quyền RLS của bảng project_data.`);
+    }
+
   } catch (err) {
     console.error("Lỗi saveProjectData:", err);
   }
