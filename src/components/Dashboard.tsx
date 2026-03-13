@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Project, DailyLog, ActionPhase } from '../types';
 import { useSyncData } from '../store';
 import { 
@@ -15,7 +15,8 @@ import {
   MousePointer,
   Receipt,
   DollarSign,
-  Loader2
+  Loader2,
+  Filter
 } from 'lucide-react';
 
 interface Props {
@@ -42,6 +43,33 @@ export function Dashboard({ project }: Props) {
   const { data: logs, loading: logsLoading } = useSyncData<DailyLog>(project.id, 'dailyLogs', []);
   const { data: actionPlan, loading: planLoading } = useSyncData<ActionPhase>(project.id, 'actionPhases', []);
 
+  // State cho bộ lọc thời gian (Mặc định: Từ đầu tháng đến hiện tại)
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  
+  const [endDate, setEndDate] = useState<string>(() => {
+    return new Date().toISOString().split('T')[0];
+  });
+
+  // Lọc logs dựa trên khoảng thời gian
+  const filteredLogs = useMemo(() => {
+    if (!startDate || !endDate) return logs;
+    
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    return logs.filter(log => {
+      const logDate = new Date(log.year, log.month - 1, log.day);
+      return logDate >= start && logDate <= end;
+    });
+  }, [logs, startDate, endDate]);
+
   if (logsLoading || planLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-gray-500">
@@ -51,6 +79,7 @@ export function Dashboard({ project }: Props) {
     );
   }
 
+  // Task Stats (Giữ nguyên toàn bộ project)
   const allTasks = actionPlan.flatMap(phase => phase.subPhases.flatMap(sp => sp.tasks));
   const totalTasks = allTasks.length;
   const doneTasks = allTasks.filter(t => t.status === 'completed').length;
@@ -58,12 +87,13 @@ export function Dashboard({ project }: Props) {
   const pendingTasks = allTasks.filter(t => t.status === 'pending').length;
   const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
-  const totalSpend = logs.reduce((s, l) => s + (l.spend || 0), 0);
-  const totalImpressions = logs.reduce((s, l) => s + (l.impressions || 0), 0);
-  const totalClicks = logs.reduce((s, l) => s + (l.clicks || 0), 0);
-  const totalMessages = logs.reduce((s, l) => s + (l.messages || 0), 0);
-  const totalOrders = logs.reduce((s, l) => s + (l.orders || 0), 0);
-  const totalRevenue = logs.reduce((s, l) => s + (l.revenue || 0), 0);
+  // KPI Stats (Tính trên filteredLogs)
+  const totalSpend = filteredLogs.reduce((s, l) => s + (l.spend || 0), 0);
+  const totalImpressions = filteredLogs.reduce((s, l) => s + (l.impressions || 0), 0);
+  const totalClicks = filteredLogs.reduce((s, l) => s + (l.clicks || 0), 0);
+  const totalMessages = filteredLogs.reduce((s, l) => s + (l.messages || 0), 0);
+  const totalOrders = filteredLogs.reduce((s, l) => s + (l.orders || 0), 0);
+  const totalRevenue = filteredLogs.reduce((s, l) => s + (l.revenue || 0), 0);
 
   const avgCTR = calculateCTR(totalClicks, totalImpressions);
   const avgCPA = calculateCPA(totalSpend, totalMessages);
@@ -114,10 +144,41 @@ export function Dashboard({ project }: Props) {
             <div className="flex items-center gap-3">
               <BarChart3 className="w-8 h-8 text-yellow-300" />
               <div>
-                <p className="text-blue-200 text-sm">Số Báo Cáo</p>
-                <p className="text-xl font-bold">{logs.length} báo cáo</p>
+                <p className="text-blue-200 text-sm">Tổng Số Báo Cáo</p>
+                <p className="text-xl font-bold">{logs.length} ngày</p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* BỘ LỌC THỜI GIAN */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="flex items-center gap-2 text-indigo-600 font-semibold">
+          <Filter className="w-5 h-5" />
+          <span>Lọc chỉ số quảng cáo theo khoảng thời gian:</span>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Từ</span>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={e => setStartDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Đến</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={e => setEndDate(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            />
+          </div>
+          <div className="ml-auto text-sm text-gray-500">
+            Tìm thấy <strong className="text-indigo-600">{filteredLogs.length}</strong> báo cáo
           </div>
         </div>
       </div>
@@ -130,7 +191,7 @@ export function Dashboard({ project }: Props) {
             <span className="text-xs font-semibold bg-white/20 px-3 py-1 rounded-full">DOANH SỐ</span>
           </div>
           <p className="text-3xl font-extrabold mt-2">{totalRevenue.toLocaleString('vi-VN')}đ</p>
-          <p className="text-emerald-100 text-sm mt-1">Doanh thu tạm tính tổng cộng</p>
+          <p className="text-emerald-100 text-sm mt-1">Doanh thu tạm tính</p>
           {roas > 0 && (
             <div className="mt-3 pt-3 border-t border-white/20 text-sm">
               <span className="text-emerald-200">ROAS: </span>
@@ -159,7 +220,7 @@ export function Dashboard({ project }: Props) {
             <span className="text-xs font-semibold bg-white/20 px-3 py-1 rounded-full">CPO</span>
           </div>
           <p className="text-3xl font-extrabold mt-2">{Math.round(avgCPO).toLocaleString('vi-VN')}đ</p>
-          <p className="text-amber-100 text-sm mt-1">Chi phí trên 1 đơn thành công</p>
+          <p className="text-amber-100 text-sm mt-1">Chi phí trên 1 đơn</p>
           <div className="mt-3 pt-3 border-t border-white/20 text-sm">
             <span className="text-amber-200">Tổng đơn: </span>
             <span className="font-bold text-lg">{totalOrders}</span>
@@ -278,14 +339,14 @@ export function Dashboard({ project }: Props) {
       )}
 
       {/* Recent Issues */}
-      {logs.filter(l => l.issues).length > 0 && (
+      {filteredLogs.filter(l => l.issues).length > 0 && (
         <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
           <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-orange-500" />
-            Vấn Đề Gần Đây
+            Vấn Đề Gần Đây (Trong khoảng thời gian lọc)
           </h3>
           <div className="space-y-3">
-            {logs.filter(l => l.issues).slice(-5).reverse().map(log => (
+            {filteredLogs.filter(l => l.issues).slice(-5).reverse().map(log => (
               <div key={log.id} className="flex items-start gap-3 p-3 bg-orange-50 rounded-lg">
                 <span className="text-xs font-medium text-orange-700 bg-orange-100 px-2 py-1 rounded whitespace-nowrap">
                   Ngày {log.day}/{log.month}
