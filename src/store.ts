@@ -2,34 +2,52 @@ import { useState, useEffect } from 'react';
 import { getSupabase } from './lib/supabase';
 import type { Project } from './types';
 
-// 1. Quản lý dự án
+// ==========================================
+// 1. DỮ LIỆU DỰ ÁN CỐT LÕI
+// ==========================================
 export const fetchProjects = async (): Promise<Project[]> => {
   try {
     const supabase = getSupabase();
     if (!supabase) return [];
     const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+    
+    // CHỐT CHẶN 1: Nếu có lỗi hoặc data bị rỗng (null), lập tức trả về mảng rỗng
     if (error || !data) return [];
+    
     return data.map(p => ({ id: p.id, name: p.name, description: p.description, createdAt: p.created_at }));
-  } catch (err) { return []; }
+  } catch (err) {
+    console.error("Lỗi fetchProjects:", err);
+    return []; // Trả về mảng rỗng để chống sập web
+  }
 };
 
-export const insertProject = async (project: Project) => {
-  const supabase = getSupabase();
-  if (!supabase) return false;
-  const { error } = await supabase.from('projects').insert([{
-    id: project.id, name: project.name, description: project.description, created_at: project.createdAt
-  }]);
-  return !error;
+export const insertProject = async (project: Project): Promise<boolean> => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase.from('projects').insert([{
+      id: project.id, name: project.name, description: project.description, created_at: project.createdAt
+    }]);
+    return !error;
+  } catch (err) {
+    return false;
+  }
 };
 
-export const removeProject = async (id: string) => {
-  const supabase = getSupabase();
-  if (!supabase) return false;
-  const { error } = await supabase.from('projects').delete().eq('id', id);
-  return !error;
+export const removeProject = async (id: string): Promise<boolean> => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    return !error;
+  } catch (err) {
+    return false;
+  }
 };
 
-// 2. Hook Đồng bộ Cloud (Sửa lỗi 406)
+// ==========================================
+// 2. HỆ THỐNG ĐỒNG BỘ CLOUD TỰ ĐỘNG (JSONB)
+// ==========================================
 export const fetchProjectData = async <T>(pid: string, key: string): Promise<T[] | null> => {
   try {
     const supabase = getSupabase();
@@ -39,26 +57,36 @@ export const fetchProjectData = async <T>(pid: string, key: string): Promise<T[]
       .select('data_value')
       .eq('project_id', pid)
       .eq('data_key', key)
-      .maybeSingle(); // CHỐT CHẶN SỬA LỖI 406
+      .single();
 
-    if (error) return null;
-    return data?.data_value ? (data.data_value as T[]) : null;
-  } catch (err) { return null; }
+    // CHỐT CHẶN 2: Bảo vệ dữ liệu chi tiết dự án
+    if (error || !data || !data.data_value) return null;
+    return data.data_value as T[];
+  } catch (err) {
+    return null;
+  }
 };
 
 export const saveProjectData = async <T>(pid: string, key: string, items: T[]) => {
   try {
     const supabase = getSupabase();
     if (!supabase) return;
-    await supabase.from('project_data').upsert({
-      project_id: pid,
-      data_key: key,
-      data_value: items,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'project_id, data_key' });
-  } catch (err) { console.error("Lỗi lưu:", err); }
+    await supabase
+      .from('project_data')
+      .upsert({
+        project_id: pid,
+        data_key: key,
+        data_value: items,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'project_id, data_key' });
+  } catch (err) {
+    console.error("Lỗi saveProjectData:", err);
+  }
 };
 
+// ==========================================
+// 3. REACT HOOK: DÙNG CHO MỌI TRANG CON
+// ==========================================
 export function useSyncData<T>(projectId: string, dataKey: string, initialValue: T[] = []) {
   const [data, setData] = useState<T[]>(initialValue);
   const [loading, setLoading] = useState(true);
@@ -68,7 +96,14 @@ export function useSyncData<T>(projectId: string, dataKey: string, initialValue:
     setLoading(true);
     fetchProjectData<T>(projectId, dataKey).then(res => {
       if (isMounted) {
-        setData(Array.isArray(res) ? res : initialValue);
+        // CHỐT CHẶN 3: Đảm bảo dữ liệu đẩy ra giao diện luôn là dạng danh sách (Array)
+        const safeData = Array.isArray(res) ? res : initialValue;
+        setData(safeData);
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (isMounted) {
+        setData(initialValue);
         setLoading(false);
       }
     });
@@ -76,29 +111,10 @@ export function useSyncData<T>(projectId: string, dataKey: string, initialValue:
   }, [projectId, dataKey]);
 
   const syncData = async (newData: T[]) => {
-    setData(newData); 
-    await saveProjectData(projectId, dataKey, newData);
+    const safeData = Array.isArray(newData) ? newData : [];
+    setData(safeData); 
+    await saveProjectData(projectId, dataKey, safeData);
   };
 
   return { data, syncData, loading };
 }
-
-// 3. Khôi phục các hàm rỗng để fix lỗi Build Vercel
-export const getActionPhases = (pid: string) => [];
-export const saveActionPhases = (pid: string, d: any) => {};
-export const getDailyLogs = (pid: string) => [];
-export const saveDailyLogs = (pid: string, d: any) => {};
-export const getAdvantages = (pid: string) => [];
-export const saveAdvantages = (pid: string, d: any) => {};
-export const getCustomerInfos = (pid: string) => [];
-export const saveCustomerInfos = (pid: string, d: any) => {};
-export const getPainPoints = (pid: string) => [];
-export const savePainPoints = (pid: string, d: any) => {};
-export const getFAQs = (pid: string) => [];
-export const saveFAQs = (pid: string, d: any) => {};
-export const getCompetitors = (pid: string) => [];
-export const saveCompetitors = (pid: string, d: any) => {};
-export const getFanpages = (pid: string) => [];
-export const saveFanpages = (pid: string, d: any) => {};
-export const getContentAds = (pid: string) => [];
-export const saveContentAds = (pid: string, d: any) => {};
