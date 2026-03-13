@@ -1,51 +1,90 @@
 import { useState, useEffect } from 'react';
 import { getSupabase } from './lib/supabase';
-import type { Project, ActionPhase, ProductAdvantage, CustomerInfo, PainPoint, FAQ, Competitor, DailyLog, Fanpage, ContentAd } from './types';
+import type { Project } from './types';
 
-// 1. Quản lý Dự án (Cloud)
+// 1. Quản lý dự án
 export const fetchProjects = async (): Promise<Project[]> => {
-  const supabase = getSupabase();
-  if (!supabase) return [];
-  const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-  return data ? data.map(p => ({ id: p.id, name: p.name, description: p.description, createdAt: p.created_at })) : [];
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+    if (error || !data) return [];
+    return data.map(p => ({ id: p.id, name: p.name, description: p.description, createdAt: p.created_at }));
+  } catch (err) { return []; }
 };
 
-export const insertProject = async (p: Project) => {
+export const insertProject = async (project: Project) => {
   const supabase = getSupabase();
-  return supabase ? !(await supabase.from('projects').insert([{ id: p.id, name: p.name, description: p.description, created_at: p.createdAt }])).error : false;
+  if (!supabase) return false;
+  const { error } = await supabase.from('projects').insert([{
+    id: project.id, name: project.name, description: project.description, created_at: project.createdAt
+  }]);
+  return !error;
 };
 
 export const removeProject = async (id: string) => {
   const supabase = getSupabase();
-  return supabase ? !(await supabase.from('projects').delete().eq('id', id)).error : false;
+  if (!supabase) return false;
+  const { error } = await supabase.from('projects').delete().eq('id', id);
+  return !error;
 };
 
-// 2. Hook đồng bộ Cloud (Fix lỗi "useSyncData is not exported")
+// 2. Hook Đồng bộ Cloud (Sửa lỗi 406)
+export const fetchProjectData = async <T>(pid: string, key: string): Promise<T[] | null> => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('project_data')
+      .select('data_value')
+      .eq('project_id', pid)
+      .eq('data_key', key)
+      .maybeSingle(); // CHỐT CHẶN SỬA LỖI 406
+
+    if (error) return null;
+    return data?.data_value ? (data.data_value as T[]) : null;
+  } catch (err) { return null; }
+};
+
+export const saveProjectData = async <T>(pid: string, key: string, items: T[]) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    await supabase.from('project_data').upsert({
+      project_id: pid,
+      data_key: key,
+      data_value: items,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'project_id, data_key' });
+  } catch (err) { console.error("Lỗi lưu:", err); }
+};
+
 export function useSyncData<T>(projectId: string, dataKey: string, initialValue: T[] = []) {
   const [data, setData] = useState<T[]>(initialValue);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const load = async () => {
-      const supabase = getSupabase();
-      if (!supabase) return;
-      const { data: res } = await supabase.from('project_data').select('data_value').eq('project_id', projectId).eq('data_key', dataKey).single();
-      if (res?.data_value) setData(res.data_value as T[]);
-      setLoading(false);
-    };
-    load();
+    let isMounted = true;
+    setLoading(true);
+    fetchProjectData<T>(projectId, dataKey).then(res => {
+      if (isMounted) {
+        setData(Array.isArray(res) ? res : initialValue);
+        setLoading(false);
+      }
+    });
+    return () => { isMounted = false; };
   }, [projectId, dataKey]);
 
   const syncData = async (newData: T[]) => {
-    setData(newData);
-    const supabase = getSupabase();
-    if (supabase) await supabase.from('project_data').upsert({ project_id: projectId, data_key: dataKey, data_value: newData, updated_at: new Date().toISOString() }, { onConflict: 'project_id, data_key' });
+    setData(newData); 
+    await saveProjectData(projectId, dataKey, newData);
   };
+
   return { data, syncData, loading };
 }
 
-// 3. Khôi phục các hàm cũ để các trang không bị lỗi trắng màn hình
-export const getActionPhases = (pid: string) => []; 
+// 3. Khôi phục các hàm rỗng để fix lỗi Build Vercel
+export const getActionPhases = (pid: string) => [];
 export const saveActionPhases = (pid: string, d: any) => {};
 export const getDailyLogs = (pid: string) => [];
 export const saveDailyLogs = (pid: string, d: any) => {};
