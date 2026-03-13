@@ -37,7 +37,6 @@ export function useAuth() {
   return ctx;
 }
 
-// Lấy quyền từ Token
 function getRoleFromSession(session: Session | null): UserRole {
   try {
     if (!session?.access_token) return 'viewer';
@@ -58,36 +57,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // Dùng useRef để giữ giá trị quyền hiện tại (Tránh lỗi lặp vô hạn khi dùng setInterval)
   const roleRef = useRef<UserRole>('viewer');
   const isRoleSynced = useRef(false);
 
-  // Hàm cập nhật quyền đồng bộ cả State lẫn Ref
   const setRole = useCallback((newRole: UserRole) => {
     setRoleState(newRole);
     roleRef.current = newRole;
   }, []);
 
-  // HÀM ÉP ĐĂNG XUẤT CHUẨN KHI BỊ ĐỔI QUYỀN
   const handleRoleChangedForceLogout = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) return;
 
-    // 1. Bật thông báo
     alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được thay đổi bởi Quản trị viên. Hệ thống sẽ tiến hành đăng xuất để cập nhật dữ liệu.\n\nVui lòng đăng nhập lại để tiếp tục!');
     
-    // 2. Xóa sạch phiên đăng nhập
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setRole('viewer');
     isRoleSynced.current = false;
     
-    // 3. Reset toàn bộ trang web
     window.location.reload();
   }, [setRole]);
 
-  // HÀM LẤY QUYỀN LÚC MỚI ĐĂNG NHẬP
   const syncLiveRole = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user) {
       setRole('viewer');
@@ -115,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setRole(currentRole);
-    isRoleSynced.current = true; // Đánh dấu đã đồng bộ xong
+    isRoleSynced.current = true;
   }, [setRole]);
 
   const refreshRole = useCallback(() => {
@@ -159,14 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured, syncLiveRole]);
 
-  // ==========================================
-  // BẢO HIỂM 2 LỚP: REALTIME + POLLING DỰ PHÒNG
-  // ==========================================
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user?.id) return;
 
-    // Lớp 1: Cố gắng bắt tín hiệu Realtime (Nếu Supabase có bật)
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
@@ -178,9 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    // Lớp 2: Quét ngầm 3 giây/lần (ĐẢM BẢO 100% HOẠT ĐỘNG NGAY CẢ KHI REALTIME BỊ LỖI)
     const intervalId = setInterval(async () => {
-      // Nếu app đang tải thì chưa quét để tránh lỗi
       if (!isRoleSynced.current) return;
 
       try {
@@ -191,13 +177,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
 
         if (!error && data?.role) {
-          // PHÁT HIỆN SỰ THAY ĐỔI! Quyền trên DB khác với quyền đang có ở trình duyệt
           if (data.role !== roleRef.current) {
             handleRoleChangedForceLogout();
           }
         }
       } catch (e) {
-        // Bỏ qua lỗi vặt
+        // Bỏ qua
       }
     }, 3000);
 
@@ -207,7 +192,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, handleRoleChangedForceLogout]);
 
-  // --- CÁC HÀM CỦA ADMIN VÀ AUTH ---
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabase();
     if (!supabase) return { error: 'Supabase chưa được cấu hình' };
@@ -262,14 +246,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
-  const canEdit = ['admin', 'manager', 'member'].includes(roleState);
-  const canManage = ['admin', 'manager'].includes(roleState);
-  const isAdmin = roleState === 'admin';
+  // ĐÃ FIX LỖI TẠI ĐÂY (Thay `roleState` thành `role`)
+  const canEdit = ['admin', 'manager', 'member'].includes(role);
+  const canManage = ['admin', 'manager'].includes(role);
+  const isAdmin = role === 'admin';
 
   return (
     <AuthContext.Provider
       value={{
-        user, session, role: roleState, loading, configured,
+        user, session, role, loading, configured,
         signIn, signUp, signOut, resetPassword,
         getAllUsers, updateUserRole,
         canEdit, canManage, isAdmin, refreshRole,
