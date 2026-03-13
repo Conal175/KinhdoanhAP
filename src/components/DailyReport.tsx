@@ -100,7 +100,7 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
     const totalClicks = dayLogs.reduce((s, l) => s + l.clicks, 0);
     const totalMessages = dayLogs.reduce((s, l) => s + l.messages, 0);
     const totalOrders = dayLogs.reduce((s, l) => s + l.orders, 0);
-    const totalRevenue = dayLogs.reduce((s, l) => s + l.revenue, 0);
+    const totalRevenue = dayLogs.reduce((s, l) => s + l.revenue, 0); // Vẫn tính toán ngầm cho Dashboard
     
     return {
       spend: totalSpend, impressions: totalImpressions, clicks: totalClicks, messages: totalMessages, orders: totalOrders, revenue: totalRevenue,
@@ -128,21 +128,26 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">Tên bài quảng cáo *</label><input type="text" value={formData.adName} onChange={(e) => setFormData({...formData, adName: e.target.value})} placeholder="VD: Camp 1 - Video máy bơm" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1"><LinkIcon className="w-3 h-3 inline mr-1" />Link bài quảng cáo</label><input type="url" value={formData.adLink} onChange={(e) => setFormData({...formData, adLink: e.target.value})} placeholder="https://www.facebook.com/ads/..." className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
+        
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><DollarSign className="w-3 h-3 inline" /> Ngân sách (Spend)</label><input type="number" value={formData.spend || ''} onChange={(e) => setFormData({...formData, spend: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><Eye className="w-3 h-3 inline" /> Lượt hiển thị</label><input type="number" value={formData.impressions || ''} onChange={(e) => setFormData({...formData, impressions: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><MousePointer className="w-3 h-3 inline" /> Lượt nhấp (Clicks)</label><input type="number" value={formData.clicks || ''} onChange={(e) => setFormData({...formData, clicks: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><MessageCircle className="w-3 h-3 inline" /> Tin nhắn mới</label><input type="number" value={formData.messages || ''} onChange={(e) => setFormData({...formData, messages: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
+        
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><ShoppingCart className="w-3 h-3 inline" /> Đơn hàng</label><input type="number" value={formData.orders || ''} onChange={(e) => setFormData({...formData, orders: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
+        
+        {/* ĐÃ MỞ LẠI: Ô nhập doanh thu (bắt buộc nhập để Dashboard có dữ liệu) */}
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><Receipt className="w-3 h-3 inline" /> Doanh thu (VNĐ)</label><input type="number" value={formData.revenue || ''} onChange={(e) => setFormData({...formData, revenue: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
+        
         <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1"><AlertTriangle className="w-3 h-3 inline text-red-500" /> Vấn đề phát sinh</label><textarea value={formData.issues} onChange={(e) => setFormData({...formData, issues: e.target.value})} rows={2} placeholder="VD: Chạy đắt, khách boom hàng..." className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1"><Zap className="w-3 h-3 inline text-green-500" /> Hành động tối ưu</label><textarea value={formData.optimizations} onChange={(e) => setFormData({...formData, optimizations: e.target.value})} rows={2} placeholder="VD: Đã tắt nhóm tuổi 18-24..." className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
       </div>
       <div className="mt-3 p-3 bg-white rounded-lg border">
         <div className="text-sm text-gray-600 mb-2 font-medium">📊 Chỉ số tự động tính:</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="grid grid-cols-3 gap-3 text-sm">
           <div><span className="text-gray-500">CTR:</span><span className="ml-2 font-semibold text-purple-600">{formatPercent(calculateCTR(formData.clicks, formData.impressions))}</span></div>
           <div><span className="text-gray-500">CPA:</span><span className="ml-2 font-semibold text-blue-600">{formatCurrency(calculateCPA(formData.spend, formData.messages))}đ</span></div>
-          <div><span className="text-gray-500">CPO:</span><span className="ml-2 font-semibold text-amber-600">{formatCurrency(calculateCPO(formData.spend, formData.orders))}đ</span></div>
+          {/* Đã ẩn CPO ở đây để không hiển thị ra cho nhân viên */}
           <div><span className="text-gray-500">Tỷ lệ chốt:</span><span className="ml-2 font-semibold text-green-600">{formatPercent(calculateCR(formData.orders, formData.messages))}</span></div>
         </div>
       </div>
@@ -177,10 +182,9 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <div className="bg-gradient-to-br from-emerald-500 to-green-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-green-100 text-sm"><Receipt className="w-4 h-4" /> Doanh thu</div><div className="text-xl font-bold mt-1">{formatCurrency(monthSummary.revenue)}đ</div></div>
+      {/* THẺ TỔNG QUAN: Không hiển thị thẻ Doanh Thu & CPO */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-blue-100 text-sm"><DollarSign className="w-4 h-4" /> Chi phí QC</div><div className="text-xl font-bold mt-1">{formatCurrency(monthSummary.spend)}đ</div></div>
-        <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-amber-100 text-sm"><ShoppingCart className="w-4 h-4" /> CPO</div><div className="text-xl font-bold mt-1">{formatCurrency(monthSummary.cpo)}đ</div></div>
         <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-green-100 text-sm"><ShoppingCart className="w-4 h-4" /> Đơn hàng</div><div className="text-xl font-bold mt-1">{monthSummary.orders}</div></div>
         <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-purple-100 text-sm"><Eye className="w-4 h-4" /> Hiển thị</div><div className="text-xl font-bold mt-1">{formatCurrency(monthSummary.impressions)}</div></div>
       </div>
@@ -216,9 +220,8 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                 </div>
                 {daySummary && (
                   <div className="hidden lg:flex items-center gap-4 text-sm">
-                    <span className="text-emerald-600 font-medium">{formatCurrency(daySummary.revenue)}đ DT</span>
+                    {/* BẢNG TÓM TẮT NGÀY: Ẩn Doanh thu và CPO */}
                     <span className="text-blue-600 font-medium">{formatCurrency(daySummary.spend)}đ CP</span>
-                    <span className="text-amber-600">{formatCurrency(daySummary.cpo)}đ/đơn</span>
                     <span className="text-green-600">{daySummary.orders} đơn</span>
                     <span className="text-purple-600">{daySummary.messages} msg</span>
                   </div>
@@ -261,10 +264,9 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Clicks</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Tin nhắn</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Đơn</th>
-                            <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Doanh thu</th>
+                            {/* BẢNG CHI TIẾT: Ẩn Doanh thu & CPO */}
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">CTR</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">CPA</th>
-                            <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">CPO</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Tỷ lệ chốt</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Vấn đề</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Hành động</th>
@@ -280,10 +282,8 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                               <td className="px-3 py-2.5 text-right text-cyan-600">{formatCurrency(log.clicks)}</td>
                               <td className="px-3 py-2.5 text-right text-amber-600">{log.messages}</td>
                               <td className="px-3 py-2.5 text-right text-green-600 font-medium">{log.orders}</td>
-                              <td className="px-3 py-2.5 text-right text-emerald-600 font-medium">{formatCurrency(log.revenue)}đ</td>
                               <td className="px-3 py-2.5 text-right text-purple-600">{formatPercent(calculateCTR(log.clicks, log.impressions))}</td>
                               <td className="px-3 py-2.5 text-right text-blue-600">{formatCurrency(calculateCPA(log.spend, log.messages))}đ</td>
-                              <td className="px-3 py-2.5 text-right text-amber-600">{formatCurrency(calculateCPO(log.spend, log.orders))}đ</td>
                               <td className="px-3 py-2.5 text-right text-green-600 font-medium">{formatPercent(calculateCR(log.orders, log.messages))}</td>
                               <td className="px-3 py-2.5 max-w-[150px]">{log.issues && <div className="bg-red-50 text-red-700 px-2 py-1 rounded text-xs">{log.issues}</div>}</td>
                               <td className="px-3 py-2.5 max-w-[150px]">{log.optimizations && <div className="bg-green-50 text-green-700 px-2 py-1 rounded text-xs">{log.optimizations}</div>}</td>
@@ -303,10 +303,8 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                               <td className="px-3 py-2 text-right text-cyan-700">{formatCurrency(daySummary.clicks)}</td>
                               <td className="px-3 py-2 text-right text-amber-700">{daySummary.messages}</td>
                               <td className="px-3 py-2 text-right text-green-700">{daySummary.orders}</td>
-                              <td className="px-3 py-2 text-right text-emerald-700">{formatCurrency(daySummary.revenue)}đ</td>
                               <td className="px-3 py-2 text-right text-purple-700">{formatPercent(daySummary.ctr)}</td>
                               <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(daySummary.cpa)}đ</td>
-                              <td className="px-3 py-2 text-right text-amber-700">{formatCurrency(daySummary.cpo)}đ</td>
                               <td className="px-3 py-2 text-right text-green-700">{formatPercent(daySummary.cr)}</td>
                               <td colSpan={3}></td>
                             </tr>
@@ -332,13 +330,11 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
 
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
         <h3 className="text-lg font-bold mb-4">📊 Tổng kết Tháng {selectedMonth}/{selectedYear}</h3>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        {/* FOOTER: Ẩn Doanh thu, CPO, và ROAS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div><div className="text-indigo-200 text-sm">Ngày có báo cáo</div><div className="text-2xl font-bold">{uniqueDaysCount} ngày</div></div>
-          <div><div className="text-indigo-200 text-sm">Doanh thu</div><div className="text-2xl font-bold">{formatCurrency(monthSummary.revenue)}đ</div></div>
           <div><div className="text-indigo-200 text-sm">Tổng chi tiêu</div><div className="text-2xl font-bold">{formatCurrency(monthSummary.spend)}đ</div></div>
-          <div><div className="text-indigo-200 text-sm">CPO</div><div className="text-2xl font-bold">{formatCurrency(monthSummary.cpo)}đ</div></div>
           <div><div className="text-indigo-200 text-sm">Tổng đơn hàng</div><div className="text-2xl font-bold">{monthSummary.orders} đơn</div></div>
-          <div><div className="text-indigo-200 text-sm">ROAS</div><div className="text-2xl font-bold">{monthSummary.spend > 0 ? (monthSummary.revenue / monthSummary.spend).toFixed(2) : '0'}x</div></div>
         </div>
       </div>
     </div>
