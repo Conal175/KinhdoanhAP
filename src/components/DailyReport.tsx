@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { DailyLog } from '../types';
 import { useSyncData } from '../store';
+import { useAuth } from '../contexts/AuthContext'; // Thêm Import hook phân quyền
 
 interface DailyReportProps {
   projectId: string;
@@ -14,6 +15,12 @@ interface DailyReportProps {
 
 const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   const { data: logs, syncData: setLogs, loading } = useSyncData<DailyLog>(projectId, 'dailyLogs', []);
+  const { checkPermission } = useAuth(); // Lấy hàm kiểm tra quyền
+  
+  // Xác định quyền Thêm/Sửa và Xóa của user hiện tại cho module Báo cáo
+  const canEdit = checkPermission('daily_report', 'edit');
+  const canDelete = checkPermission('daily_report', 'delete');
+
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [expandedDays, setExpandedDays] = useState<number[]>([new Date().getDate()]);
@@ -54,12 +61,14 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   };
 
   const handleAddLog = (day: number) => {
+    if (!canEdit) return; // Bảo mật 2 lớp
     setIsAdding(day);
     setEditingLog(null);
     resetForm();
   };
 
   const handleEditLog = (log: DailyLog) => {
+    if (!canEdit) return; // Bảo mật 2 lớp
     setEditingLog(log);
     setIsAdding(null);
     setFormData({
@@ -69,7 +78,7 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   };
 
   const handleSave = async (day: number) => {
-    if (!formData.adName.trim()) return;
+    if (!formData.adName.trim() || !canEdit) return;
 
     if (editingLog) {
       const updated = logs.map(l => l.id === editingLog.id ? { ...l, ...formData } : l);
@@ -86,6 +95,7 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   };
 
   const handleDelete = async (logId: string) => {
+    if (!canDelete) return; // Bảo mật 2 lớp
     if (confirm('Bạn có chắc muốn xóa báo cáo này?')) {
       await setLogs(logs.filter(l => l.id !== logId));
     }
@@ -100,7 +110,7 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
     const totalClicks = dayLogs.reduce((s, l) => s + l.clicks, 0);
     const totalMessages = dayLogs.reduce((s, l) => s + l.messages, 0);
     const totalOrders = dayLogs.reduce((s, l) => s + l.orders, 0);
-    const totalRevenue = dayLogs.reduce((s, l) => s + l.revenue, 0); // Vẫn tính toán ngầm cho Dashboard
+    const totalRevenue = dayLogs.reduce((s, l) => s + l.revenue, 0);
     
     return {
       spend: totalSpend, impressions: totalImpressions, clicks: totalClicks, messages: totalMessages, orders: totalOrders, revenue: totalRevenue,
@@ -136,7 +146,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
         
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><ShoppingCart className="w-3 h-3 inline" /> Đơn hàng</label><input type="number" value={formData.orders || ''} onChange={(e) => setFormData({...formData, orders: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         
-        {/* ĐÃ MỞ LẠI: Ô nhập doanh thu (bắt buộc nhập để Dashboard có dữ liệu) */}
         <div><label className="block text-sm font-medium text-gray-700 mb-1"><Receipt className="w-3 h-3 inline" /> Doanh thu (VNĐ)</label><input type="number" value={formData.revenue || ''} onChange={(e) => setFormData({...formData, revenue: Number(e.target.value)})} placeholder="0" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
         
         <div className="lg:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1"><AlertTriangle className="w-3 h-3 inline text-red-500" /> Vấn đề phát sinh</label><textarea value={formData.issues} onChange={(e) => setFormData({...formData, issues: e.target.value})} rows={2} placeholder="VD: Chạy đắt, khách boom hàng..." className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-${colorScheme}-500`} /></div>
@@ -147,7 +156,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
         <div className="grid grid-cols-3 gap-3 text-sm">
           <div><span className="text-gray-500">CTR:</span><span className="ml-2 font-semibold text-purple-600">{formatPercent(calculateCTR(formData.clicks, formData.impressions))}</span></div>
           <div><span className="text-gray-500">CPA:</span><span className="ml-2 font-semibold text-blue-600">{formatCurrency(calculateCPA(formData.spend, formData.messages))}đ</span></div>
-          {/* Đã ẩn CPO ở đây để không hiển thị ra cho nhân viên */}
           <div><span className="text-gray-500">Tỷ lệ chốt:</span><span className="ml-2 font-semibold text-green-600">{formatPercent(calculateCR(formData.orders, formData.messages))}</span></div>
         </div>
       </div>
@@ -182,7 +190,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
         </div>
       </div>
 
-      {/* THẺ TỔNG QUAN: Không hiển thị thẻ Doanh Thu & CPO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-blue-100 text-sm"><DollarSign className="w-4 h-4" /> Chi phí QC</div><div className="text-xl font-bold mt-1">{formatCurrency(monthSummary.spend)}đ</div></div>
         <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white"><div className="flex items-center gap-2 text-green-100 text-sm"><ShoppingCart className="w-4 h-4" /> Đơn hàng</div><div className="text-xl font-bold mt-1">{monthSummary.orders}</div></div>
@@ -220,18 +227,20 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                 </div>
                 {daySummary && (
                   <div className="hidden lg:flex items-center gap-4 text-sm">
-                    {/* BẢNG TÓM TẮT NGÀY: Ẩn Doanh thu và CPO */}
                     <span className="text-blue-600 font-medium">{formatCurrency(daySummary.spend)}đ CP</span>
                     <span className="text-green-600">{daySummary.orders} đơn</span>
                     <span className="text-purple-600">{daySummary.messages} msg</span>
                   </div>
                 )}
-                <button onClick={(e) => { e.stopPropagation(); handleAddLog(day); }} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 ml-2 shrink-0"><Plus className="w-4 h-4" /></button>
+                {/* HIỂN THỊ NÚT THÊM NẾU CÓ QUYỀN */}
+                {canEdit && (
+                  <button onClick={(e) => { e.stopPropagation(); handleAddLog(day); }} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 ml-2 shrink-0"><Plus className="w-4 h-4" /></button>
+                )}
               </div>
 
               {isExpanded && (
                 <div className="border-t">
-                  {isAdding === day && (
+                  {isAdding === day && canEdit && (
                     <div className="p-4 bg-indigo-50 border-b">
                       <h4 className="font-semibold text-indigo-800 mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Thêm báo cáo mới - Ngày {day}</h4>
                       {renderFormFields('indigo')}
@@ -242,7 +251,7 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                     </div>
                   )}
 
-                  {editingLog && getLogsForDay(day).some(l => l.id === editingLog.id) && (
+                  {editingLog && getLogsForDay(day).some(l => l.id === editingLog.id) && canEdit && (
                     <div className="p-4 bg-amber-50 border-b">
                       <h4 className="font-semibold text-amber-800 mb-3 flex items-center gap-2"><Edit2 className="w-4 h-4" /> Sửa báo cáo - {editingLog.adName}</h4>
                       {renderFormFields('amber')}
@@ -264,13 +273,15 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Clicks</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Tin nhắn</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Đơn</th>
-                            {/* BẢNG CHI TIẾT: Ẩn Doanh thu & CPO */}
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">CTR</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">CPA</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Tỷ lệ chốt</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Vấn đề</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Hành động</th>
-                            <th className="px-3 py-2 text-center font-semibold text-gray-600 whitespace-nowrap">Thao tác</th>
+                            {/* Chẩn Cột Thao tác */}
+                            {(canEdit || canDelete) && (
+                              <th className="px-3 py-2 text-center font-semibold text-gray-600 whitespace-nowrap">Thao tác</th>
+                            )}
                           </tr>
                         </thead>
                         <tbody>
@@ -287,12 +298,16 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                               <td className="px-3 py-2.5 text-right text-green-600 font-medium">{formatPercent(calculateCR(log.orders, log.messages))}</td>
                               <td className="px-3 py-2.5 max-w-[150px]">{log.issues && <div className="bg-red-50 text-red-700 px-2 py-1 rounded text-xs">{log.issues}</div>}</td>
                               <td className="px-3 py-2.5 max-w-[150px]">{log.optimizations && <div className="bg-green-50 text-green-700 px-2 py-1 rounded text-xs">{log.optimizations}</div>}</td>
-                              <td className="px-3 py-2.5">
-                                <div className="flex items-center justify-center gap-1">
-                                  <button onClick={() => handleEditLog(log)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 className="w-4 h-4" /></button>
-                                  <button onClick={() => handleDelete(log.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>
-                                </div>
-                              </td>
+                              
+                              {/* ẨN/HIỆN NÚT SỬA XÓA TÙY QUYỀN */}
+                              {(canEdit || canDelete) && (
+                                <td className="px-3 py-2.5">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {canEdit && <button onClick={() => handleEditLog(log)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 className="w-4 h-4" /></button>}
+                                    {canDelete && <button onClick={() => handleDelete(log.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4" /></button>}
+                                  </div>
+                                </td>
+                              )}
                             </tr>
                           ))}
                           {dayLogs.length > 1 && daySummary && (
@@ -306,7 +321,7 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                               <td className="px-3 py-2 text-right text-purple-700">{formatPercent(daySummary.ctr)}</td>
                               <td className="px-3 py-2 text-right text-blue-700">{formatCurrency(daySummary.cpa)}đ</td>
                               <td className="px-3 py-2 text-right text-green-700">{formatPercent(daySummary.cr)}</td>
-                              <td colSpan={3}></td>
+                              <td colSpan={(canEdit || canDelete) ? 3 : 2}></td>
                             </tr>
                           )}
                         </tbody>
@@ -317,7 +332,10 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                       <div className="p-8 text-center text-gray-400">
                         <TrendingUp className="w-10 h-10 mx-auto mb-2 opacity-50" />
                         <p>Chưa có báo cáo cho ngày này</p>
-                        <button onClick={() => handleAddLog(day)} className="mt-2 text-indigo-600 font-medium">+ Thêm báo cáo đầu tiên</button>
+                        {/* ẨN NÚT THÊM NẾU KHÔNG CÓ QUYỀN */}
+                        {canEdit && (
+                          <button onClick={() => handleAddLog(day)} className="mt-2 text-indigo-600 font-medium">+ Thêm báo cáo đầu tiên</button>
+                        )}
                       </div>
                     )
                   )}
@@ -330,7 +348,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
 
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
         <h3 className="text-lg font-bold mb-4">📊 Tổng kết Tháng {selectedMonth}/{selectedYear}</h3>
-        {/* FOOTER: Ẩn Doanh thu, CPO, và ROAS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div><div className="text-indigo-200 text-sm">Ngày có báo cáo</div><div className="text-2xl font-bold">{uniqueDaysCount} ngày</div></div>
           <div><div className="text-indigo-200 text-sm">Tổng chi tiêu</div><div className="text-2xl font-bold">{formatCurrency(monthSummary.spend)}đ</div></div>
