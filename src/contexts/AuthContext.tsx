@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { getSupabase, getSupabaseConfig, decodeJWT } from '../lib/supabase';
+import { getSupabase, getSupabaseConfig } from '../lib/supabase';
 
 export type UserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
@@ -16,19 +16,17 @@ interface AuthContextType {
   session: Session | null;
   role: UserRole;
   loading: boolean;
-  configured: boolean; // Supabase đã cấu hình chưa
+  configured: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
-  // Admin functions (ĐÃ ĐƯỢC GIỮ NGUYÊN)
   getAllUsers: () => Promise<UserWithRole[]>;
   updateUserRole: (userId: string, newRole: UserRole) => Promise<{ error: string | null }>;
-  // Permissions
   canEdit: boolean;
   canManage: boolean;
   isAdmin: boolean;
-  refreshRole: () => void;
+  refreshRole: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -39,21 +37,6 @@ export function useAuth() {
   return ctx;
 }
 
-function getRoleFromSession(session: Session | null): UserRole {
-  // Bọc Try/Catch để phòng trường hợp Token bị hỏng gây sập web
-  try {
-    if (!session?.access_token) return 'viewer';
-    const decoded = decodeJWT(session.access_token);
-    if (!decoded) return 'member';
-    const role = decoded.user_role as string;
-    if (['admin', 'manager', 'member', 'viewer'].includes(role)) return role as UserRole;
-    return 'member';
-  } catch (error) {
-    console.error("Lỗi giải mã JWT:", error);
-    return 'viewer';
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -61,9 +44,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  const refreshRole = useCallback(() => {
-    setRole(getRoleFromSession(session));
-  }, [session]);
+  // HÀM LẤY QUYỀN TRỰC TIẾP TỪ DATABASE (Độ chính xác 100%, không phụ thuộc Token)
+  const fetchLiveRole = useCallback(async (userId: string) => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId)
+        .single();
+      if (!error && data?.role) {
+        setRole(data.role as UserRole);
+      } else {
+        setRole('viewer'); // An toàn: Lỗi thì cho về viewer
+      }
+    } catch (e) {
+      console.error("Lỗi fetchLiveRole:", e);
+      setRole('viewer');
+    }
+  }, []);
+
+  const refreshRole = useCallback(async () => {
+    if (user?.id) {
+      await fetchLiveRole(user.id);
+    }
+  }, [user?.id, fetchLiveRole]);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -72,33 +78,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 1. CHỐT CHẶN LỖI: Bắt buộc có .catch() và .finally() để không bị kẹt Loading
+    let mounted = true;
+
+    // Lấy Session lần đầu
     supabase.auth.getSession()
       .then(({ data: { session: s }, error }) => {
         if (error) console.error("Lỗi getSession:", error);
-        setSession(s);
-        setUser(s?.user ?? null);
-        setRole(getRoleFromSession(s));
+        if (mounted) {
+          setSession(s);
+          setUser(s?.user ?? null);
+          if (s?.user) {
+            // Có user -> Gọi thẳng DB lấy quyền
+            fetchLiveRole(s.user.id).finally(() => {
+              if (mounted) setLoading(false);
+            });
+          } else {
+            setLoading(false);
+          }
+        }
       })
       .catch((err) => {
-        console.error("Ngoại lệ khi lấy Session:", err);
-      })
-      .finally(() => {
-        setLoading(false);
+        console.error("Ngoại lệ lấy Session:", err);
+        if (mounted) setLoading(false);
       });
 
-    // 2. Lắng nghe auth changes
+    // Lắng nghe Đăng nhập / Đăng xuất
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (!mounted) return;
       setSession(s);
       setUser(s?.user ?? null);
-      setRole(getRoleFromSession(s));
-      setLoading(false);
+      if (s?.user) {
+        fetchLiveRole(s.user.id);
+      } else {
+        setRole('viewer');
+      }
     });
 
-    return () => subscription.unsubscribe();
-  }, [configured]);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [configured, fetchLiveRole]);
 
-  // 3. REALTIME AN TOÀN: Khi Admin đổi quyền, ép tự động lấy Token mới
+  // LẮNG NGHE REALTIME: Khi Admin đổi quyền trong DB
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user) return;
@@ -109,7 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
         () => {
-          // Ép lấy token mới -> Kích hoạt onAuthStateChange -> Tự động giải mã quyền mới
+          // 1. Cập nhật giao diện NGAY LẬP TỨC bằng cách chọc thẳng vào DB
+          fetchLiveRole(user.id);
+          // 2. Ép làm mới token ngầm bên dưới để backend nhận diện quyền mới
           supabase.auth.refreshSession().catch(console.error);
         }
       )
@@ -118,8 +142,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(roleSubscription);
     };
-  }, [user?.id]);
+  }, [user?.id, fetchLiveRole]);
 
+  // CÁC HÀM CỦA ADMIN VÀ AUTH
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabase();
     if (!supabase) return { error: 'Supabase chưa được cấu hình' };
