@@ -1,274 +1,201 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useAuth, type UserRole, type UserWithRole } from '../../contexts/AuthContext';
-import {
-  Users,
-  Shield,
-  ShieldCheck,
-  ShieldAlert,
-  Eye,
-  Crown,
-  RefreshCw,
-  Search,
-  CheckCircle2,
-  AlertCircle,
-  UserCog,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useAuth, UserWithRole, UserRole, PermissionMatrix } from '../../contexts/AuthContext';
 
-const ROLE_CONFIG: Record<UserRole, { label: string; color: string; bg: string; icon: typeof Crown; desc: string }> = {
-  admin: { label: 'Admin', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: Crown, desc: 'Toàn quyền: quản lý users, projects, mọi tính năng' },
-  manager: { label: 'Manager', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', icon: ShieldCheck, desc: 'Quản lý: tạo/sửa/xóa projects, phân công, báo cáo' },
-  member: { label: 'Member', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: Shield, desc: 'Thành viên: xem & cập nhật tasks, viết báo cáo' },
-  viewer: { label: 'Viewer', color: 'text-gray-500', bg: 'bg-gray-50 border-gray-200', icon: Eye, desc: 'Chỉ xem: không thể chỉnh sửa bất kỳ dữ liệu nào' },
-};
+// Danh sách các Module/Trang trong hệ thống của bạn
+const APP_MODULES = [
+  { id: 'dashboard', name: 'Dashboard' },
+  { id: 'strategy_product', name: 'Chiến lược Sản phẩm' },
+  { id: 'strategy_customer', name: 'Chiến lược Khách hàng' },
+  { id: 'competitors', name: 'Phân tích Đối thủ' },
+  { id: 'daily_report', name: 'Báo cáo Hàng ngày' },
+];
 
 export function AdminPanel() {
-  const { getAllUsers, updateUserRole, user: currentUser } = useAuth();
+  const { getAllUsers, updateUserRole, updateUserPermissions, user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [updating, setUpdating] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // States cho Ma trận quyền
+  const [matrixUser, setMatrixUser] = useState<UserWithRole | null>(null);
+  const [tempMatrix, setTempMatrix] = useState<PermissionMatrix>({});
+  const [savingMatrix, setSavingMatrix] = useState(false);
 
-  const loadUsers = useCallback(async () => {
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
     setLoading(true);
     const data = await getAllUsers();
     setUsers(data);
     setLoading(false);
-  }, [getAllUsers]);
-
-  useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
-
-  const handleRoleChange = async (userId: string, newRole: UserRole) => {
-    if (userId === currentUser?.id) {
-      setMessage({ type: 'error', text: 'Không thể thay đổi quyền của chính mình!' });
-      setTimeout(() => setMessage(null), 3000);
-      return;
-    }
-    setUpdating(userId);
-    const { error } = await updateUserRole(userId, newRole);
-    if (error) {
-      setMessage({ type: 'error', text: error });
-    } else {
-      setMessage({ type: 'success', text: `Đã cập nhật quyền thành công!` });
-      await loadUsers();
-    }
-    setUpdating(null);
-    setTimeout(() => setMessage(null), 3000);
   };
 
-  const filteredUsers = users.filter(u =>
-    u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+    await updateUserRole(userId, newRole);
+    loadUsers();
+  };
 
-  const roleCounts = users.reduce((acc, u) => {
-    acc[u.role as UserRole] = (acc[u.role as UserRole] || 0) + 1;
-    return acc;
-  }, {} as Record<UserRole, number>);
+  // Mở bảng ma trận
+  const openMatrix = (user: UserWithRole) => {
+    setMatrixUser(user);
+    // Nếu chưa có matrix, khởi tạo mặc định là false hết
+    const initialMatrix = { ...user.permissions };
+    APP_MODULES.forEach(mod => {
+      if (!initialMatrix[mod.id]) {
+        initialMatrix[mod.id] = { view: false, edit: false, delete: false };
+      }
+    });
+    setTempMatrix(initialMatrix);
+  };
+
+  // Bật/tắt 1 quyền trong ma trận
+  const togglePermission = (moduleId: string, action: 'view' | 'edit' | 'delete') => {
+    setTempMatrix(prev => {
+      const currentModule = prev[moduleId] || { view: false, edit: false, delete: false };
+      const newValue = !currentModule[action];
+      
+      // Logic thông minh: Nếu tắt 'view' thì tự động tắt luôn 'edit' và 'delete'
+      if (action === 'view' && !newValue) {
+        return { ...prev, [moduleId]: { view: false, edit: false, delete: false } };
+      }
+      // Nếu bật 'edit' hoặc 'delete' thì tự động bật 'view'
+      if ((action === 'edit' || action === 'delete') && newValue) {
+        return { ...prev, [moduleId]: { ...currentModule, [action]: true, view: true } };
+      }
+
+      return { ...prev, [moduleId]: { ...currentModule, [action]: newValue } };
+    });
+  };
+
+  const saveMatrix = async () => {
+    if (!matrixUser) return;
+    setSavingMatrix(true);
+    await updateUserPermissions(matrixUser.user_id, tempMatrix);
+    setSavingMatrix(false);
+    setMatrixUser(null);
+    loadUsers(); // Tải lại để lấy dữ liệu mới
+  };
+
+  if (loading) return <div className="p-8 text-center text-gray-500 font-medium">Đang tải danh sách người dùng...</div>;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-pink-600 rounded-xl flex items-center justify-center">
-              <UserCog className="w-5 h-5 text-white" />
-            </div>
-            Quản Lý Người Dùng
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">Phân quyền truy cập hệ thống (Custom JWT Claims)</p>
-        </div>
-        <button
-          onClick={loadUsers}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="p-6 border-b border-gray-200 bg-gray-50/50">
+        <h2 className="text-xl font-bold text-gray-800">Quản lý Tài khoản & Phân quyền</h2>
+        <p className="text-sm text-gray-500 mt-1">Cấp quyền truy cập hệ thống và tùy chỉnh ma trận module cho từng nhân sự.</p>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+              <th className="p-4 border-b border-gray-200 font-semibold">Email</th>
+              <th className="p-4 border-b border-gray-200 font-semibold">Chức vụ (Role)</th>
+              <th className="p-4 border-b border-gray-200 font-semibold text-center">Ma trận Module</th>
+            </tr>
+          </thead>
+          <tbody className="text-sm">
+            {users.map((u) => (
+              <tr key={u.user_id} className="hover:bg-blue-50/50 transition-colors border-b border-gray-100 last:border-0">
+                <td className="p-4 text-gray-800 font-medium">
+                  {u.email}
+                  {u.user_id === currentUser?.id && <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Bạn</span>}
+                </td>
+                <td className="p-4">
+                  <select
+                    value={u.role}
+                    onChange={(e) => handleRoleChange(u.user_id, e.target.value as UserRole)}
+                    disabled={u.user_id === currentUser?.id}
+                    className="block w-40 text-sm border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                  >
+                    <option value="admin">Admin (Toàn quyền)</option>
+                    <option value="manager">Manager (Quản lý)</option>
+                    <option value="member">Member (Thành viên)</option>
+                    <option value="viewer">Viewer (Chỉ xem)</option>
+                  </select>
+                </td>
+                <td className="p-4 text-center">
+                  <button
+                    onClick={() => openMatrix(u)}
+                    disabled={u.role === 'admin'}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      u.role === 'admin' 
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                      : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200'
+                    }`}
+                  >
+                    {u.role === 'admin' ? 'Đã cấp toàn quyền' : 'Thiết lập Ma trận'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {(['admin', 'manager', 'member', 'viewer'] as UserRole[]).map(r => {
-          const cfg = ROLE_CONFIG[r];
-          const Icon = cfg.icon;
-          return (
-            <div key={r} className={`border rounded-xl p-4 ${cfg.bg}`}>
-              <div className="flex items-center justify-between mb-2">
-                <Icon className={`w-5 h-5 ${cfg.color}`} />
-                <span className={`text-2xl font-bold ${cfg.color}`}>{roleCounts[r] || 0}</span>
+      {/* MODAL MA TRẬN PHÂN QUYỀN */}
+      {matrixUser && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Ma trận phân quyền</h3>
+                <p className="text-sm text-gray-500">Đang chỉnh sửa cho: <span className="font-semibold text-indigo-600">{matrixUser.email}</span></p>
               </div>
-              <p className={`text-sm font-medium ${cfg.color}`}>{cfg.label}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{cfg.desc.split(':')[0]}</p>
+              <button onClick={() => setMatrixUser(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
             </div>
-          );
-        })}
-      </div>
+            
+            <div className="p-6">
+              <table className="w-full text-left border-collapse border border-gray-200 rounded-lg overflow-hidden">
+                <thead>
+                  <tr className="bg-gray-100 text-gray-700 text-sm">
+                    <th className="p-3 border border-gray-200 font-semibold">Tên Module / Trang</th>
+                    <th className="p-3 border border-gray-200 font-semibold text-center w-24">Xem</th>
+                    <th className="p-3 border border-gray-200 font-semibold text-center w-24">Thêm/Sửa</th>
+                    <th className="p-3 border border-gray-200 font-semibold text-center w-24 text-red-600">Xóa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {APP_MODULES.map(mod => {
+                    const perms = tempMatrix[mod.id] || { view: false, edit: false, delete: false };
+                    return (
+                      <tr key={mod.id} className="hover:bg-gray-50 border-b border-gray-200 text-sm">
+                        <td className="p-3 border-r border-gray-200 font-medium text-gray-800">{mod.name}</td>
+                        <td className="p-3 border-r border-gray-200 text-center">
+                          <input type="checkbox" checked={perms.view} onChange={() => togglePermission(mod.id, 'view')} className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer" />
+                        </td>
+                        <td className="p-3 border-r border-gray-200 text-center">
+                          <input type="checkbox" checked={perms.edit} onChange={() => togglePermission(mod.id, 'edit')} className="w-4 h-4 text-green-600 rounded focus:ring-green-500 cursor-pointer" />
+                        </td>
+                        <td className="p-3 text-center">
+                          <input type="checkbox" checked={perms.delete} onChange={() => togglePermission(mod.id, 'delete')} className="w-4 h-4 text-red-600 rounded focus:ring-red-500 cursor-pointer" />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div className="mt-4 text-sm text-gray-500 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                💡 <b>Mẹo thông minh:</b> Khi bạn tích vào "Sửa" hoặc "Xóa", hệ thống sẽ tự động bật quyền "Xem" vì để sửa được thì bắt buộc phải nhìn thấy!
+              </div>
+            </div>
 
-      {/* Message */}
-      {message && (
-        <div className={`flex items-center gap-2 p-3 rounded-xl text-sm ${
-          message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
-        }`}>
-          {message.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-          {message.text}
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button onClick={() => setMatrixUser(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                Hủy bỏ
+              </button>
+              <button 
+                onClick={saveMatrix} 
+                disabled={savingMatrix}
+                className="px-5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {savingMatrix ? 'Đang lưu...' : 'Lưu Ma trận'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="w-5 h-5 text-gray-400 absolute left-4 top-1/2 -translate-y-1/2" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Tìm kiếm theo email..."
-          className="w-full bg-white border border-gray-200 rounded-xl pl-12 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-        />
-      </div>
-
-      {/* User Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="p-12 text-center">
-            <div className="w-10 h-10 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-gray-500 text-sm">Đang tải danh sách users...</p>
-          </div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="p-12 text-center">
-            <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">{search ? 'Không tìm thấy user nào' : 'Chưa có user nào'}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">#</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Email</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Quyền hiện tại</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-600">Ngày tham gia</th>
-                  <th className="text-center px-6 py-4 font-semibold text-gray-600">Thay đổi quyền</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((u, idx) => {
-                  const cfg = ROLE_CONFIG[(u.role as UserRole) || 'member'];
-                  const Icon = cfg.icon;
-                  const isCurrentUser = u.user_id === currentUser?.id;
-                  return (
-                    <tr key={u.user_id} className={`border-b border-gray-100 ${isCurrentUser ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`}>
-                      <td className="px-6 py-4 text-gray-400">{idx + 1}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                            u.role === 'admin' ? 'bg-gradient-to-br from-red-500 to-pink-600' :
-                            u.role === 'manager' ? 'bg-gradient-to-br from-amber-500 to-orange-600' :
-                            u.role === 'member' ? 'bg-gradient-to-br from-blue-500 to-indigo-600' :
-                            'bg-gradient-to-br from-gray-400 to-gray-500'
-                          }`}>
-                            {u.email.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-800">{u.email}</p>
-                            {isCurrentUser && (
-                              <span className="text-xs text-blue-500 font-medium">← Bạn</span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${cfg.bg} ${cfg.color}`}>
-                          <Icon className="w-3.5 h-3.5" /> {cfg.label}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {new Date(u.created_at).toLocaleDateString('vi-VN')}
-                      </td>
-                      <td className="px-6 py-4">
-                        {isCurrentUser ? (
-                          <p className="text-xs text-gray-400 text-center">Không thể tự đổi</p>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            {(['admin', 'manager', 'member', 'viewer'] as UserRole[]).map(r => {
-                              const rc = ROLE_CONFIG[r];
-                              const isActive = u.role === r;
-                              return (
-                                <button
-                                  key={r}
-                                  onClick={() => !isActive && handleRoleChange(u.user_id, r)}
-                                  disabled={isActive || updating === u.user_id}
-                                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                                    isActive
-                                      ? `${rc.bg} ${rc.color} border cursor-default`
-                                      : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 border border-transparent'
-                                  } ${updating === u.user_id ? 'opacity-50' : ''}`}
-                                  title={rc.desc}
-                                >
-                                  {updating === u.user_id ? '...' : rc.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Permissions Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <h3 className="font-bold text-gray-700 flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-indigo-500" /> Ma Trận Phân Quyền
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left px-6 py-3 font-semibold text-gray-600">Chức năng</th>
-                <th className="text-center px-4 py-3 font-semibold text-red-600">Admin</th>
-                <th className="text-center px-4 py-3 font-semibold text-amber-600">Manager</th>
-                <th className="text-center px-4 py-3 font-semibold text-blue-600">Member</th>
-                <th className="text-center px-4 py-3 font-semibold text-gray-500">Viewer</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { name: 'Xem Dashboard & Báo cáo', perms: [true, true, true, true] },
-                { name: 'Xem Chiến Lược & Media', perms: [true, true, true, true] },
-                { name: 'Tạo & Sửa dự án', perms: [true, true, false, false] },
-                { name: 'Xóa dự án', perms: [true, true, false, false] },
-                { name: 'Tạo/Sửa Action Plan', perms: [true, true, true, false] },
-                { name: 'Viết Báo cáo hàng ngày', perms: [true, true, true, false] },
-                { name: 'Quản lý Chiến Lược & Media', perms: [true, true, true, false] },
-                { name: 'Quản lý người dùng', perms: [true, false, false, false] },
-                { name: 'Phân quyền', perms: [true, false, false, false] },
-              ].map((row, i) => (
-                <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="px-6 py-3 text-gray-700">{row.name}</td>
-                  {row.perms.map((p, j) => (
-                    <td key={j} className="text-center px-4 py-3">
-                      {p ? (
-                        <span className="text-green-500 text-lg">✓</span>
-                      ) : (
-                        <span className="text-gray-300 text-lg">✗</span>
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
