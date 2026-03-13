@@ -37,17 +37,17 @@ export function useAuth() {
   return ctx;
 }
 
-// Hàm đọc quyền dự phòng từ Token
+// Hàm đọc quyền dự phòng từ Token (Đề phòng Database bị trễ)
 function getRoleFromSession(session: Session | null): UserRole {
   try {
     if (!session?.access_token) return 'viewer';
     const decoded = decodeJWT(session.access_token);
-    if (!decoded) return 'member'; // Mặc định của hệ thống
+    if (!decoded) return 'viewer'; 
     const role = decoded.user_role as string;
     if (['admin', 'manager', 'member', 'viewer'].includes(role)) return role as UserRole;
-    return 'member';
+    return 'viewer';
   } catch (error) {
-    return 'member';
+    return 'viewer';
   }
 }
 
@@ -58,36 +58,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // HÀM ĐỒNG BỘ QUYỀN CHUẨN XÁC: Ai lấy quyền người nấy (Không dùng hàm Admin)
+  // HÀM LẤY QUYỀN CHUẨN XÁC: Mỗi user tự lấy quyền của chính mình từ DB
   const syncLiveRole = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user) {
       setRole('viewer');
       return;
     }
 
-    // 1. Gắn quyền từ Token làm mặc định dự phòng
-    let finalRole = getRoleFromSession(currentSession);
+    // 1. Mặc định lấy từ Token trước cho nhanh
+    let currentRole = getRoleFromSession(currentSession);
 
+    // 2. Chọc thẳng vào Database để lấy quyền chuẩn xác nhất
     const supabase = getSupabase();
     if (supabase) {
       try {
-        // 2. Tự đọc quyền của chính mình từ Database
-        // Dùng maybeSingle() để không văng lỗi nếu user chưa có tên trong bảng
         const { data, error } = await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', currentSession.user.id)
           .maybeSingle();
 
+        // Nếu lấy được dữ liệu thành công thì ghi đè quyền
         if (!error && data?.role) {
-          finalRole = data.role as UserRole;
+          currentRole = data.role as UserRole;
         }
       } catch (err) {
         console.error("Lỗi khi fetch live role:", err);
       }
     }
 
-    setRole(finalRole);
+    setRole(currentRole);
   }, []);
 
   const refreshRole = useCallback(() => {
@@ -103,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
+    // Lấy Session lần đầu khởi động web
     supabase.auth.getSession()
       .then(({ data: { session: s } }) => {
         if (mounted) {
@@ -113,10 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
       })
-      .catch((err) => {
+      .catch(() => {
         if (mounted) setLoading(false);
       });
 
+    // Lắng nghe sự kiện Đăng nhập / Đăng xuất
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       if (mounted) {
         setSession(s);
@@ -131,29 +133,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured, syncLiveRole]);
 
-  // LẮNG NGHE REALTIME & QUÉT NGẦM TỰ ĐỘNG
+  // LẮNG NGHE REALTIME (CẬP NHẬT GIAO DIỆN TỨC THÌ KHI BỊ ĐỔI QUYỀN)
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user?.id) return;
 
-    const updateRole = () => syncLiveRole(session);
-
-    // Bắt sự kiện Realtime
+    // Lắng nghe thay đổi của chính user này trên bảng user_roles
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
+        { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
         () => {
-           updateRole();
+           // Có thay đổi -> Gọi lại DB để lấy quyền mới ngay lập tức
+           syncLiveRole(session);
+           // Lấy Token mới ngầm bên dưới
            supabase.auth.refreshSession().catch(() => {});
         }
       )
       .subscribe();
 
-    // BẢO HIỂM KÉP: Kiểm tra lại quyền mỗi 3 giây 
-    // (Đảm bảo giao diện 100% tự biến đổi khi bị hạ/nâng cấp mà không cần F5)
-    const intervalId = setInterval(updateRole, 3000);
+    // Bảo hiểm kép: Quét ngầm mỗi 5 giây phòng trường hợp mạng chập chờn rớt Realtime
+    const intervalId = setInterval(() => {
+      syncLiveRole(session);
+    }, 5000);
 
     return () => {
       supabase.removeChannel(roleSubscription);
@@ -161,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, session, syncLiveRole]);
 
-  // --- CÁC HÀM CỦA ADMIN VÀ AUTH GIỮ NGUYÊN ---
+  // --- CÁC HÀM CỦA ADMIN VÀ AUTH ---
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabase();
     if (!supabase) return { error: 'Supabase chưa được cấu hình' };
