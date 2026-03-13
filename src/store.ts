@@ -1,121 +1,120 @@
-import type { Project, Task, ActionPhase, ProductAdvantage, CustomerInfo, PainPoint, FAQ, Competitor, DailyLog, Fanpage, ContentAd } from './types';
+import { useState, useEffect } from 'react';
+import { getSupabase } from './lib/supabase';
+import type { Project } from './types';
 
-const KEYS = {
-  projects: 'pm_projects',
-  tasks: 'pm_tasks',
-  actionPhases: 'pm_actionphases',
-  advantages: 'pm_advantages',
-  customerInfos: 'pm_customerinfos',
-  painPoints: 'pm_painpoints',
-  faqs: 'pm_faqs',
-  competitors: 'pm_competitors',
-  dailyLogs: 'pm_dailylogs',
-  fanpageChecks: 'pm_fanpage',
-  contentAds: 'pm_contentads',
-};
-
-function load<T>(key: string): T[] {
+// ==========================================
+// 1. DỮ LIỆU DỰ ÁN CỐT LÕI
+// ==========================================
+export const fetchProjects = async (): Promise<Project[]> => {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function save<T>(key: string, data: T[]) {
-  localStorage.setItem(key, JSON.stringify(data));
-}
-
-// Projects
-export const getProjects = (): Project[] => load(KEYS.projects);
-export const saveProjects = (p: Project[]) => save(KEYS.projects, p);
-
-// Tasks
-export const getTasks = (projectId: string): Task[] =>
-  load<Task>(KEYS.tasks).filter(t => t.projectId === projectId);
-export const getAllTasks = (): Task[] => load(KEYS.tasks);
-export const saveTasks = (tasks: Task[]) => save(KEYS.tasks, tasks);
-export const saveTasksForProject = (projectId: string, tasks: Task[]) => {
-  const all = load<Task>(KEYS.tasks).filter(t => t.projectId !== projectId);
-  save(KEYS.tasks, [...all, ...tasks]);
-};
-
-// Product Advantages
-export const getAdvantages = (pid: string): ProductAdvantage[] =>
-  load<ProductAdvantage>(KEYS.advantages).filter(a => a.projectId === pid);
-export const saveAdvantages = (pid: string, items: ProductAdvantage[]) => {
-  const all = load<ProductAdvantage>(KEYS.advantages).filter(a => a.projectId !== pid);
-  save(KEYS.advantages, [...all, ...items]);
-};
-
-// Customer Infos
-export const getCustomerInfos = (pid: string): CustomerInfo[] =>
-  load<CustomerInfo>(KEYS.customerInfos).filter(c => c.projectId === pid);
-export const saveCustomerInfos = (pid: string, items: CustomerInfo[]) => {
-  const all = load<CustomerInfo>(KEYS.customerInfos).filter(c => c.projectId !== pid);
-  save(KEYS.customerInfos, [...all, ...items]);
-};
-
-// Pain Points
-export const getPainPoints = (pid: string): PainPoint[] =>
-  load<PainPoint>(KEYS.painPoints).filter(p => p.projectId === pid);
-export const savePainPoints = (pid: string, items: PainPoint[]) => {
-  const all = load<PainPoint>(KEYS.painPoints).filter(p => p.projectId !== pid);
-  save(KEYS.painPoints, [...all, ...items]);
-};
-
-// FAQs
-export const getFAQs = (pid: string): FAQ[] =>
-  load<FAQ>(KEYS.faqs).filter(f => f.projectId === pid);
-export const saveFAQs = (pid: string, items: FAQ[]) => {
-  const all = load<FAQ>(KEYS.faqs).filter(f => f.projectId !== pid);
-  save(KEYS.faqs, [...all, ...items]);
-};
-
-// Competitors
-export const getCompetitors = (pid: string): Competitor[] =>
-  load<Competitor>(KEYS.competitors).filter(c => c.projectId === pid);
-export const saveCompetitors = (pid: string, items: Competitor[]) => {
-  const all = load<Competitor>(KEYS.competitors).filter(c => c.projectId !== pid);
-  save(KEYS.competitors, [...all, ...items]);
-};
-
-// Daily Logs
-export const getDailyLogs = (pid: string): DailyLog[] =>
-  load<DailyLog>(KEYS.dailyLogs).filter(d => d.projectId === pid);
-export const saveDailyLogs = (pid: string, items: DailyLog[]) => {
-  const all = load<DailyLog>(KEYS.dailyLogs).filter(d => d.projectId !== pid);
-  save(KEYS.dailyLogs, [...all, ...items]);
-};
-
-// Fanpages (with embedded checklist)
-export const getFanpages = (pid: string): Fanpage[] =>
-  load<Fanpage>(KEYS.fanpageChecks).filter(f => f.projectId === pid);
-export const saveFanpages = (pid: string, items: Fanpage[]) => {
-  const all = load<Fanpage>(KEYS.fanpageChecks).filter(f => f.projectId !== pid);
-  save(KEYS.fanpageChecks, [...all, ...items]);
-};
-
-// Content Ads
-export const getContentAds = (pid: string): ContentAd[] =>
-  load<ContentAd>(KEYS.contentAds).filter(c => c.projectId === pid);
-export const saveContentAds = (pid: string, items: ContentAd[]) => {
-  const all = load<ContentAd>(KEYS.contentAds).filter(c => c.projectId !== pid);
-  save(KEYS.contentAds, [...all, ...items]);
-};
-
-// Action Phases (new Action Plan structure)
-export const getActionPhases = (pid: string): ActionPhase[] => {
-  const key = `${KEYS.actionPhases}_${pid}`;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+    
+    // CHỐT CHẶN 1: Nếu có lỗi hoặc data bị rỗng (null), lập tức trả về mảng rỗng
+    if (error || !data) return [];
+    
+    return data.map(p => ({ id: p.id, name: p.name, description: p.description, createdAt: p.created_at }));
+  } catch (err) {
+    console.error("Lỗi fetchProjects:", err);
+    return []; // Trả về mảng rỗng để chống sập web
   }
 };
-export const saveActionPhases = (pid: string, phases: ActionPhase[]) => {
-  const key = `${KEYS.actionPhases}_${pid}`;
-  localStorage.setItem(key, JSON.stringify(phases));
+
+export const insertProject = async (project: Project): Promise<boolean> => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase.from('projects').insert([{
+      id: project.id, name: project.name, description: project.description, created_at: project.createdAt
+    }]);
+    return !error;
+  } catch (err) {
+    return false;
+  }
 };
+
+export const removeProject = async (id: string): Promise<boolean> => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    const { error } = await supabase.from('projects').delete().eq('id', id);
+    return !error;
+  } catch (err) {
+    return false;
+  }
+};
+
+// ==========================================
+// 2. HỆ THỐNG ĐỒNG BỘ CLOUD TỰ ĐỘNG (JSONB)
+// ==========================================
+export const fetchProjectData = async <T>(pid: string, key: string): Promise<T[] | null> => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('project_data')
+      .select('data_value')
+      .eq('project_id', pid)
+      .eq('data_key', key)
+      .single();
+
+    // CHỐT CHẶN 2: Bảo vệ dữ liệu chi tiết dự án
+    if (error || !data || !data.data_value) return null;
+    return data.data_value as T[];
+  } catch (err) {
+    return null;
+  }
+};
+
+export const saveProjectData = async <T>(pid: string, key: string, items: T[]) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    await supabase
+      .from('project_data')
+      .upsert({
+        project_id: pid,
+        data_key: key,
+        data_value: items,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'project_id, data_key' });
+  } catch (err) {
+    console.error("Lỗi saveProjectData:", err);
+  }
+};
+
+// ==========================================
+// 3. REACT HOOK: DÙNG CHO MỌI TRANG CON
+// ==========================================
+export function useSyncData<T>(projectId: string, dataKey: string, initialValue: T[] = []) {
+  const [data, setData] = useState<T[]>(initialValue);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+    fetchProjectData<T>(projectId, dataKey).then(res => {
+      if (isMounted) {
+        // CHỐT CHẶN 3: Đảm bảo dữ liệu đẩy ra giao diện luôn là dạng danh sách (Array)
+        const safeData = Array.isArray(res) ? res : initialValue;
+        setData(safeData);
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (isMounted) {
+        setData(initialValue);
+        setLoading(false);
+      }
+    });
+    return () => { isMounted = false; };
+  }, [projectId, dataKey]);
+
+  const syncData = async (newData: T[]) => {
+    const safeData = Array.isArray(newData) ? newData : [];
+    setData(safeData); 
+    await saveProjectData(projectId, dataKey, safeData);
+  };
+
+  return { data, syncData, loading };
+}
