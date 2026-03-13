@@ -2,9 +2,7 @@ import { useState } from 'react';
 import type { Project, DailyLog, ActionPhase } from '../types';
 import { getDailyLogs, getActionPhases } from '../store';
 import { useAuth } from '../contexts/AuthContext';
-import { 
-  BarChart3, CheckCircle, Clock, Rocket, Calendar, Receipt, DollarSign, ShoppingCart
-} from 'lucide-react';
+import { BarChart3, CheckCircle, Clock, Rocket, Calendar, Receipt, DollarSign, ShoppingCart } from 'lucide-react';
 
 export function Dashboard({ project }: { project: Project }) {
   const { checkPermission } = useAuth();
@@ -30,10 +28,10 @@ export function Dashboard({ project }: { project: Project }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-bold">
-        <div className="bg-emerald-500 text-white p-6 rounded-2xl shadow-lg"><Receipt className="w-8 h-8 opacity-50 mb-2" /><p className="text-2xl">{totalRevenue.toLocaleString()}đ</p><p className="text-sm">TỔNG DOANH THU</p></div>
-        <div className="bg-blue-500 text-white p-6 rounded-2xl shadow-lg"><DollarSign className="w-8 h-8 opacity-50 mb-2" /><p className="text-2xl">{totalSpend.toLocaleString()}đ</p><p className="text-sm">CHI PHÍ QUẢNG CÁO</p></div>
-        <div className="bg-amber-500 text-white p-6 rounded-2xl shadow-lg"><ShoppingCart className="w-8 h-8 opacity-50 mb-2" /><p className="text-2xl">{totalOrders}</p><p className="text-sm">TỔNG ĐƠN HÀNG</p></div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-bold text-white">
+        <div className="bg-emerald-500 p-6 rounded-2xl shadow-lg"><Receipt className="w-8 h-8 opacity-50 mb-2" /><p className="text-2xl">{totalRevenue.toLocaleString()}đ</p><p className="text-sm">TỔNG DOANH THU</p></div>
+        <div className="bg-blue-500 p-6 rounded-2xl shadow-lg"><DollarSign className="w-8 h-8 opacity-50 mb-2" /><p className="text-2xl">{totalSpend.toLocaleString()}đ</p><p className="text-sm">CHI PHÍ QUẢNG CÁO</p></div>
+        <div className="bg-amber-500 p-6 rounded-2xl shadow-lg"><ShoppingCart className="w-8 h-8 opacity-50 mb-2" /><p className="text-2xl">{totalOrders}</p><p className="text-sm">TỔNG ĐƠN HÀNG</p></div>
       </div>
 
       <div className="bg-white rounded-xl p-6 border shadow-sm">
