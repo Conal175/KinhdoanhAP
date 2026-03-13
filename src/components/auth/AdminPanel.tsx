@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth, UserWithRole, UserRole, PermissionMatrix } from '../../contexts/AuthContext';
 
-// Danh sách các Module/Trang trong hệ thống của bạn
+// ĐÃ CẬP NHẬT: Bổ sung 'action_plan' và 'media' vào danh sách Module
 const APP_MODULES = [
   { id: 'dashboard', name: 'Dashboard' },
+  { id: 'action_plan', name: 'Action Plan' },
   { id: 'strategy_product', name: 'Chiến lược Sản phẩm' },
   { id: 'strategy_customer', name: 'Chiến lược Khách hàng' },
   { id: 'competitors', name: 'Phân tích Đối thủ' },
   { id: 'daily_report', name: 'Báo cáo Hàng ngày' },
+  { id: 'media', name: 'Media' },
 ];
 
 export function AdminPanel() {
