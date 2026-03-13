@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { getSupabase, getSupabaseConfig, decodeJWT } from '../lib/supabase';
 
@@ -54,18 +54,50 @@ function getRoleFromSession(session: Session | null): UserRole {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [role, setRole] = useState<UserRole>('viewer');
+  const [role, setRoleState] = useState<UserRole>('viewer');
   const [loading, setLoading] = useState(true);
   const configured = !!getSupabaseConfig();
 
-  // HÀM LẤY QUYỀN LÚC ĐĂNG NHẬP
+  // Dùng useRef để giữ giá trị quyền hiện tại (Tránh lỗi lặp vô hạn khi dùng setInterval)
+  const roleRef = useRef<UserRole>('viewer');
+  const isRoleSynced = useRef(false);
+
+  // Hàm cập nhật quyền đồng bộ cả State lẫn Ref
+  const setRole = useCallback((newRole: UserRole) => {
+    setRoleState(newRole);
+    roleRef.current = newRole;
+  }, []);
+
+  // HÀM ÉP ĐĂNG XUẤT CHUẨN KHI BỊ ĐỔI QUYỀN
+  const handleRoleChangedForceLogout = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    // 1. Bật thông báo
+    alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được thay đổi bởi Quản trị viên. Hệ thống sẽ tiến hành đăng xuất để cập nhật dữ liệu.\n\nVui lòng đăng nhập lại để tiếp tục!');
+    
+    // 2. Xóa sạch phiên đăng nhập
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setRole('viewer');
+    isRoleSynced.current = false;
+    
+    // 3. Reset toàn bộ trang web
+    window.location.reload();
+  }, [setRole]);
+
+  // HÀM LẤY QUYỀN LÚC MỚI ĐĂNG NHẬP
   const syncLiveRole = useCallback(async (currentSession: Session | null) => {
     if (!currentSession?.user) {
       setRole('viewer');
+      isRoleSynced.current = true;
       return;
     }
+
     let currentRole = getRoleFromSession(currentSession);
     const supabase = getSupabase();
+    
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -73,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('role')
           .eq('user_id', currentSession.user.id)
           .maybeSingle();
+
         if (!error && data?.role) {
           currentRole = data.role as UserRole;
         }
@@ -80,8 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Lỗi khi fetch live role:", err);
       }
     }
+
     setRole(currentRole);
-  }, []);
+    isRoleSynced.current = true; // Đánh dấu đã đồng bộ xong
+  }, [setRole]);
 
   const refreshRole = useCallback(() => {
     syncLiveRole(session);
@@ -125,37 +160,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [configured, syncLiveRole]);
 
   // ==========================================
-  // LẮNG NGHE REALTIME: THÔNG BÁO VÀ ÉP ĐĂNG XUẤT
+  // BẢO HIỂM 2 LỚP: REALTIME + POLLING DỰ PHÒNG
   // ==========================================
   useEffect(() => {
     const supabase = getSupabase();
     if (!supabase || !user?.id) return;
 
+    // Lớp 1: Cố gắng bắt tín hiệu Realtime (Nếu Supabase có bật)
     const roleSubscription = supabase
       .channel(`role-update-${user.id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: `user_id=eq.${user.id}` },
-        async () => {
-           // 1. Hiển thị thông báo (Trình duyệt sẽ chặn đứng màn hình để user đọc)
-           alert('⚠️ THÔNG BÁO HỆ THỐNG ⚠️\n\nQuyền truy cập của bạn vừa được thay đổi bởi Quản trị viên. Hệ thống sẽ tiến hành đăng xuất để cập nhật dữ liệu.\n\nVui lòng đăng nhập lại để tiếp tục!');
-           
-           // 2. Tiến hành xóa phiên đăng nhập ngay lập tức
-           await supabase.auth.signOut();
-           setUser(null);
-           setSession(null);
-           setRole('viewer');
-           
-           // 3. Tải lại trang web để dọn dẹp toàn bộ rác/cache trên giao diện cũ
-           window.location.reload();
+        () => {
+           handleRoleChangedForceLogout();
         }
       )
       .subscribe();
 
+    // Lớp 2: Quét ngầm 3 giây/lần (ĐẢM BẢO 100% HOẠT ĐỘNG NGAY CẢ KHI REALTIME BỊ LỖI)
+    const intervalId = setInterval(async () => {
+      // Nếu app đang tải thì chưa quét để tránh lỗi
+      if (!isRoleSynced.current) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!error && data?.role) {
+          // PHÁT HIỆN SỰ THAY ĐỔI! Quyền trên DB khác với quyền đang có ở trình duyệt
+          if (data.role !== roleRef.current) {
+            handleRoleChangedForceLogout();
+          }
+        }
+      } catch (e) {
+        // Bỏ qua lỗi vặt
+      }
+    }, 3000);
+
     return () => {
       supabase.removeChannel(roleSubscription);
+      clearInterval(intervalId);
     };
-  }, [user?.id]);
+  }, [user?.id, handleRoleChangedForceLogout]);
 
   // --- CÁC HÀM CỦA ADMIN VÀ AUTH ---
   const signIn = async (email: string, password: string) => {
@@ -182,6 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
     setRole('viewer');
+    isRoleSynced.current = false;
   };
 
   const resetPassword = async (email: string) => {
@@ -211,14 +262,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
-  const canEdit = ['admin', 'manager', 'member'].includes(role);
-  const canManage = ['admin', 'manager'].includes(role);
-  const isAdmin = role === 'admin';
+  const canEdit = ['admin', 'manager', 'member'].includes(roleState);
+  const canManage = ['admin', 'manager'].includes(roleState);
+  const isAdmin = roleState === 'admin';
 
   return (
     <AuthContext.Provider
       value={{
-        user, session, role, loading, configured,
+        user, session, role: roleState, loading, configured,
         signIn, signUp, signOut, resetPassword,
         getAllUsers, updateUserRole,
         canEdit, canManage, isAdmin, refreshRole,
