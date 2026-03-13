@@ -1,15 +1,16 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import type { ProductAdvantage } from '../types';
-import { getAdvantages, saveAdvantages } from '../store';
+// Thay đổi import: dùng useSyncData thay vì các hàm cũ không tồn tại
+import { useSyncData } from '../store'; 
 import { v4 as uuid } from 'uuid';
 import {
   Plus, Trash2, Edit3, X, Check, Link2, Package,
-  ExternalLink
+  ExternalLink, Loader2
 } from 'lucide-react';
 
 interface Props {
   projectId: string;
-  onClose: () => void;
+  onBack: () => void; // Đổi tên prop từ onClose thành onBack cho khớp với App.tsx
 }
 
 const emptyProduct = (): Omit<ProductAdvantage, 'id' | 'projectId'> => ({
@@ -21,24 +22,24 @@ const textareaCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm 
 const thCls = "px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-b-2 border-gray-200 bg-gray-50/80";
 const tdCls = "px-4 py-3 text-sm text-gray-700 border-b border-gray-100 align-top";
 
-export function StrategyProduct({ projectId, onClose }: Props) {
-  const [products, setProducts] = useState<ProductAdvantage[]>(() => getAdvantages(projectId));
+export function ProductStrategy({ projectId, onBack }: Props) {
+  // Sử dụng hook đồng bộ dữ liệu mới từ store.ts
+  const { data: products, syncData, loading } = useSyncData<ProductAdvantage>(projectId, 'strategy_product');
+  
   const [prodForm, setProdForm] = useState(emptyProduct());
   const [showProdForm, setShowProdForm] = useState(false);
   const [editingProdId, setEditingProdId] = useState<string | null>(null);
 
-  const persistProducts = useCallback((items: ProductAdvantage[]) => {
-    setProducts(items);
-    saveAdvantages(projectId, items);
-  }, [projectId]);
-
-  const addOrUpdateProd = () => {
+  const addOrUpdateProd = async () => {
     if (!prodForm.productName.trim()) return;
+    
     if (editingProdId) {
-      persistProducts(products.map(p => p.id === editingProdId ? { ...p, ...prodForm } : p));
+      const updated = products.map(p => p.id === editingProdId ? { ...p, ...prodForm } : p);
+      await syncData(updated);
       setEditingProdId(null);
     } else {
-      persistProducts([...products, { id: uuid(), projectId, ...prodForm }]);
+      const newNode: ProductAdvantage = { id: uuid(), projectId, ...prodForm };
+      await syncData([...products, newNode]);
     }
     setProdForm(emptyProduct());
     setShowProdForm(false);
@@ -101,16 +102,25 @@ export function StrategyProduct({ projectId, onClose }: Props) {
     );
   };
 
+  // Hiển thị trạng thái loading khi đang tải dữ liệu từ Supabase
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-gray-400">
+        <Loader2 className="w-10 h-10 animate-spin mb-4" />
+        <p>Đang tải dữ liệu chiến lược sản phẩm...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header với nút quay lại */}
       <div className="flex items-center justify-between">
         <div>
           <button
-            onClick={onClose}
+            onClick={onBack}
             className="flex items-center gap-2 text-sm text-gray-500 hover:text-amber-600 transition-colors mb-2"
           >
-            ← Quay lại danh sách
+            ← Quay lại dashboard
           </button>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
@@ -128,9 +138,8 @@ export function StrategyProduct({ projectId, onClose }: Props) {
         </button>
       </div>
 
-      {/* Form */}
       {showProdForm && (
-        <div className="bg-amber-50/50 rounded-xl p-6 border border-amber-200">
+        <div className="bg-amber-50/50 rounded-xl p-6 border border-amber-200 shadow-inner">
           <h4 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
             <Package className="w-4 h-4 text-amber-600" />
             {editingProdId ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}
@@ -163,7 +172,7 @@ export function StrategyProduct({ projectId, onClose }: Props) {
                 value={prodForm.specs}
                 onChange={e => setProdForm({ ...prodForm, specs: e.target.value })}
                 rows={4}
-                placeholder="Công suất 750W\nLưu lượng 45L/phút\nCột áp 25m\nĐiện áp 220V/50Hz"
+                placeholder="Công suất 750W&#10;Lưu lượng 45L/phút"
                 className={textareaCls}
               />
             </div>
@@ -173,7 +182,7 @@ export function StrategyProduct({ projectId, onClose }: Props) {
                 value={prodForm.competitiveAdvantage}
                 onChange={e => setProdForm({ ...prodForm, competitiveAdvantage: e.target.value })}
                 rows={4}
-                placeholder="VD: Công suất mạnh nhất phân khúc, tiết kiệm điện 30%, bảo hành 24 tháng..."
+                placeholder="VD: Công suất mạnh nhất phân khúc..."
                 className={textareaCls}
               />
             </div>
@@ -188,7 +197,7 @@ export function StrategyProduct({ projectId, onClose }: Props) {
                 value={prodForm.mediaLinks}
                 onChange={e => setProdForm({ ...prodForm, mediaLinks: e.target.value })}
                 rows={3}
-                placeholder="https://drive.google.com/video-test-1\nhttps://drive.google.com/anh-san-pham\nhttps://youtube.com/review-sp"
+                placeholder="https://drive.google.com/..."
                 className={textareaCls}
               />
             </div>
@@ -210,7 +219,6 @@ export function StrategyProduct({ projectId, onClose }: Props) {
         </div>
       )}
 
-      {/* Table */}
       {products.length > 0 ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
@@ -266,7 +274,7 @@ export function StrategyProduct({ projectId, onClose }: Props) {
                           <Edit3 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => persistProducts(products.filter(x => x.id !== p.id))}
+                          onClick={() => syncData(products.filter(x => x.id !== p.id))}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           title="Xóa"
                         >
