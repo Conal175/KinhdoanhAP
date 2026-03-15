@@ -75,14 +75,12 @@ export function OrderManagement({ projectId }: Props) {
     }
   };
 
-  // Tự động tính tổng tiền
   useEffect(() => {
     if (showForm && !editingId) {
       setFormData(prev => ({ ...prev, total: prev.quantity * prev.price }));
     }
   }, [formData.quantity, formData.price]);
 
-  // XUẤT EXCEL CHUẨN FORMAT
   const handleExportExcel = () => {
     const exportData = orders.map(o => ({
       'Ngày': o.orderDate,
@@ -110,7 +108,9 @@ export function OrderManagement({ projectId }: Props) {
     XLSX.writeFile(workbook, `Danh_Sach_Don_Hang.xlsx`);
   };
 
-  // NHẬP EXCEL VỚI CƠ CHẾ CHỐNG LỖI KÝ TỰ (Xóa dấu Enter trong tiêu đề cột Excel)
+  // ==============================================================
+  // HÀM NHẬP EXCEL MỚI: THÔNG MINH HƠN, TỰ ĐỘNG DÒ TÌM TIÊU ĐỀ
+  // ==============================================================
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !canEdit) return;
@@ -123,51 +123,93 @@ export function OrderManagement({ projectId }: Props) {
         const binaryStr = evt.target?.result;
         const workbook = XLSX.read(binaryStr, { type: 'binary', cellDates: true });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rawData = XLSX.utils.sheet_to_json(worksheet) as any[];
         
+        // Đọc dữ liệu thành mảng 2 chiều để dễ quét từng dòng
+        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        // 1. Quét tìm dòng chứa Tiêu đề (Phải có cột "tên khách hàng")
+        let headerRowIndex = -1;
+        for (let i = 0; i < Math.min(20, rawData.length); i++) {
+          const row = rawData[i];
+          if (row && row.some(cell => typeof cell === 'string' && cell.toLowerCase().includes('tên khách hàng'))) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+
+        if (headerRowIndex === -1) {
+          alert('❌ Không tìm thấy cột "Tên khách hàng" trong file. Vui lòng kiểm tra lại file Excel!');
+          setIsImporting(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        // 2. Làm sạch tên các cột
+        const headers = rawData[headerRowIndex].map(h => 
+          h ? String(h).replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase() : ''
+        );
+
+        // Hàm tiện ích: Ép kiểu chuỗi lỗi "1.400 .000" thành số 1400000
+        const parseNumber = (val: any) => {
+          if (!val) return 0;
+          if (typeof val === 'number') return val;
+          const str = String(val).replace(/[^0-9]/g, ''); 
+          return Number(str) || 0;
+        };
+
+        // Hàm tiện ích: Đọc ngày tháng chuẩn xác
+        const parseDate = (val: any) => {
+          if (!val) return '';
+          if (val instanceof Date) {
+            // Fix lỗi lệch múi giờ của JS khi đọc file Excel
+            return new Date(val.getTime() - val.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+          }
+          const str = String(val).trim();
+          const parts = str.split('/');
+          if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          return str.split(' ')[0]; 
+        };
+
         let successCount = 0;
 
-        for (const rawRow of rawData) {
-          // Chuẩn hóa key: Xóa ký tự \n, khoảng trắng dư thừa
+        // 3. Đọc dữ liệu từ dòng dưới tiêu đề trở đi
+        for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+          const rowArray = rawData[i];
+          if (!rowArray || rowArray.length === 0) continue;
+
+          // Gắn dữ liệu cột với tên cột
           const row: any = {};
-          for (const key in rawRow) {
-            const cleanKey = key.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-            row[cleanKey] = rawRow[key];
-          }
+          headers.forEach((h, index) => {
+            if (h) row[h] = rowArray[index];
+          });
 
+          // Nếu có tên khách hàng mới lưu
           if (row['tên khách hàng']) {
-            // Xử lý ngày tháng từ Excel (có thể là Date object hoặc chuỗi)
-            const parseDate = (val: any) => {
-              if (!val) return '';
-              if (val instanceof Date) return val.toISOString().split('T')[0];
-              return String(val).trim();
-            };
-
             const newOrder = {
               projectId,
               orderDate: parseDate(row['ngày']),
               source: row['nguồn'] ? String(row['nguồn']) : '',
               customerInfo: String(row['tên khách hàng']),
               address: row['địa chỉ'] ? String(row['địa chỉ']) : '',
-              productName: row['tên sp'] ? String(row['tên sp']) : '',
-              quantity: Number(row['số lượng']) || 1,
-              price: Number(row['giá bán']) || 0,
-              total: Number(row['tổng đơn']) || 0,
+              productName: row['tên sp'] || row['tên sản phẩm'] ? String(row['tên sp'] || row['tên sản phẩm']) : '',
+              quantity: parseNumber(row['số lượng']) || 1,
+              price: parseNumber(row['giá bán']) || 0,
+              total: parseNumber(row['tổng đơn']) || 0,
               notes: row['ghi chú'] ? String(row['ghi chú']) : '',
               shippingDate: parseDate(row['ngày lên đơn']),
               trackingCode: row['mã vận đơn'] ? String(row['mã vận đơn']) : '',
               status: row['trạng thái đơn hàng'] || row['trạng thái'] ? String(row['trạng thái đơn hàng'] || row['trạng thái']) : '',
-              shippingFee: Number(row['phí vc'] || row['phí vận chuyển']) || 0
+              shippingFee: parseNumber(row['phí vc'] || row['phí vận chuyển']) || 0
             };
             
             await insertOrder(newOrder);
             successCount++;
           }
         }
-        alert(`✅ Đã nhập thành công ${successCount} đơn hàng!`);
+        alert(`✅ Đã nhập thành công ${successCount} đơn hàng từ Excel!`);
         loadOrders();
       } catch (error) {
-        alert('❌ Lỗi đọc file Excel. Định dạng không hợp lệ!');
+        alert('❌ Lỗi đọc file Excel. Định dạng không hợp lệ hoặc file bị hỏng!');
       } finally {
         setIsImporting(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
