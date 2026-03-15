@@ -9,6 +9,15 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface Props { projectId: string; }
 
+// Danh sách trạng thái chuẩn
+const STATUS_OPTIONS = [
+  'Chưa xử lý', 
+  'Đang giao hàng', 
+  'Phát thành công', 
+  'Đang hoàn', 
+  'Hủy'
+];
+
 export function OrderManagement({ projectId }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,26 +26,30 @@ export function OrderManagement({ projectId }: Props) {
   const canEdit = checkPermission('orders', 'edit');
   const canDelete = checkPermission('orders', 'delete');
 
+  // Lấy ngày đầu tháng và cuối tháng hiện tại
+  const today = new Date();
+  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+
   // ================= BỘ LỌC TÌM KIẾM =================
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-    dateFrom: '', dateTo: '', source: '', customer: '', 
-    product: '', tracking: '', status: ''
+    dateFrom: firstDayOfMonth, 
+    dateTo: lastDayOfMonth, 
+    source: '', customer: '', product: '', tracking: '', status: ''
   });
 
   // ================= STATE QUẢN LÝ THÊM/SỬA =================
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Thêm đơn mới (Modal)
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSavingAdd, setIsSavingAdd] = useState(false);
   const [addFormData, setAddFormData] = useState<Omit<Order, 'id' | 'projectId'>>({
     orderDate: new Date().toISOString().split('T')[0], source: '', customerInfo: '', address: '',
-    productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: '', shippingFee: 0
+    productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: 'Chưa xử lý', shippingFee: 0
   });
 
-  // Chỉnh sửa trực tiếp trên dòng (Inline Edit)
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Order>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -68,7 +81,6 @@ export function OrderManagement({ projectId }: Props) {
 
   // ================= XỬ LÝ THÊM MỚI (MODAL) =================
   useEffect(() => {
-    // Tự động tính tổng tiền khi nhập form thêm mới
     setAddFormData(prev => ({ ...prev, total: prev.quantity * prev.price }));
   }, [addFormData.quantity, addFormData.price]);
 
@@ -81,15 +93,14 @@ export function OrderManagement({ projectId }: Props) {
       setShowAddModal(false);
       setAddFormData({
         orderDate: new Date().toISOString().split('T')[0], source: '', customerInfo: '', address: '',
-        productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: '', shippingFee: 0
+        productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: 'Chưa xử lý', shippingFee: 0
       });
     }
     setIsSavingAdd(false);
   };
 
-  // ================= XỬ LÝ SỬA TRỰC TIẾP (INLINE EDIT) =================
+  // ================= XỬ LÝ SỬA TRỰC TIẾP =================
   useEffect(() => {
-    // Tự động tính tổng tiền khi sửa trực tiếp
     if (editingRowId && editFormData.quantity !== undefined && editFormData.price !== undefined) {
       setEditFormData(prev => ({ ...prev, total: (prev.quantity || 0) * (prev.price || 0) }));
     }
@@ -188,7 +199,7 @@ export function OrderManagement({ projectId }: Props) {
               quantity: parseNumber(row['số lượng']) || 1, price: parseNumber(row['giá bán']) || 0, total: parseNumber(row['tổng đơn']) || 0,
               notes: row['ghi chú'] ? String(row['ghi chú']) : '', shippingDate: parseDate(row['ngày lên đơn']),
               trackingCode: row['mã vận đơn'] ? String(row['mã vận đơn']) : '',
-              status: row['trạng thái đơn hàng'] || row['trạng thái'] ? String(row['trạng thái đơn hàng'] || row['trạng thái']) : '',
+              status: row['trạng thái đơn hàng'] || row['trạng thái'] ? String(row['trạng thái đơn hàng'] || row['trạng thái']) : 'Chưa xử lý',
               shippingFee: parseNumber(row['phí vc'] || row['phí vận chuyển']) || 0
             });
             successCount++;
@@ -248,7 +259,7 @@ export function OrderManagement({ projectId }: Props) {
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 animate-in slide-in-from-top-2">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-700 flex items-center gap-2"><Filter className="w-4 h-4" /> Lọc tìm kiếm chi tiết</h3>
-            <button onClick={clearFilters} className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"><RefreshCcw className="w-3 h-3" /> Xóa lọc</button>
+            <button onClick={clearFilters} className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"><RefreshCcw className="w-3 h-3" /> Xem tất cả</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3 text-sm">
             <div><label className="block text-xs text-gray-500 mb-1">Từ ngày</label><input type="date" value={filters.dateFrom} onChange={e => setFilters({...filters, dateFrom: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none" /></div>
@@ -257,30 +268,39 @@ export function OrderManagement({ projectId }: Props) {
             <div><label className="block text-xs text-gray-500 mb-1">Mã vận đơn</label><input type="text" placeholder="Tìm..." value={filters.tracking} onChange={e => setFilters({...filters, tracking: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none" /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Nguồn (Page...)</label><input type="text" placeholder="Tìm..." value={filters.source} onChange={e => setFilters({...filters, source: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none" /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Sản phẩm</label><input type="text" placeholder="Tìm..." value={filters.product} onChange={e => setFilters({...filters, product: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none" /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Trạng thái</label><input type="text" placeholder="Hoàn, Thành công..." value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none" /></div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Trạng thái</label>
+              <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="w-full border rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none bg-white">
+                <option value="">Tất cả trạng thái</option>
+                {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
           </div>
         </div>
       )}
 
-      {/* FULL DATA TABLE WITH INLINE EDIT */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* FULL DATA TABLE - Có khung scroll cố định */}
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+        {/* max-h-[calc(100vh-280px)] giúp bảng luôn có thanh cuộn thay vì đẩy trang xuống tít dưới */}
+        <div className="overflow-auto max-h-[calc(100vh-280px)] w-full relative">
           <table className="w-full text-sm text-left whitespace-nowrap">
-            <thead className="bg-gray-50 text-gray-600 font-semibold border-b border-gray-200">
+            {/* sticky top-0 ghim tiêu đề */}
+            <thead className="sticky top-0 z-10 bg-gray-50 text-gray-600 font-semibold border-b border-gray-200 shadow-sm">
               <tr>
                 <th className="px-3 py-3 w-10 text-center">#</th>
                 <th className="px-3 py-3">Ngày HĐ</th>
                 <th className="px-3 py-3">Nguồn Page</th>
-                <th className="px-3 py-3">Khách hàng (Tên-SĐT)</th>
-                <th className="px-3 py-3">Địa chỉ giao</th>
-                <th className="px-3 py-3">Sản phẩm</th>
+                <th className="px-3 py-3 min-w-[250px]">Khách hàng (Tên-SĐT)</th>
+                <th className="px-3 py-3 min-w-[250px]">Địa chỉ giao</th>
+                <th className="px-3 py-3 min-w-[250px]">Sản phẩm</th>
                 <th className="px-3 py-3 w-16 text-center">SL</th>
                 <th className="px-3 py-3 text-right">Đơn giá</th>
                 <th className="px-3 py-3 text-right">Tổng thu</th>
                 <th className="px-3 py-3">Mã VĐ</th>
                 <th className="px-3 py-3">Trạng thái</th>
                 <th className="px-3 py-3 text-right">Phí Ship</th>
-                <th className="px-3 py-3">Ghi chú</th>
+                <th className="px-3 py-3 min-w-[200px]">Ghi chú</th>
+                {/* sticky right-0 ghim cột thao tác */}
                 {(canEdit || canDelete) && <th className="px-3 py-3 text-center sticky right-0 bg-gray-50 shadow-[-5px_0_10px_rgba(0,0,0,0.02)]">Thao tác</th>}
               </tr>
             </thead>
@@ -297,42 +317,48 @@ export function OrderManagement({ projectId }: Props) {
                     {/* EDIT MODE: Hiển thị Input */}
                     {isEditing ? (
                       <>
-                        <td className="px-1 py-1"><input type="date" value={editFormData.orderDate || ''} onChange={e => setEditFormData({...editFormData, orderDate: e.target.value})} className="w-full border border-gray-300 rounded p-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none" /></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.source || ''} onChange={e => setEditFormData({...editFormData, source: e.target.value})} className="w-full border border-gray-300 rounded p-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Nguồn" /></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.customerInfo || ''} onChange={e => setEditFormData({...editFormData, customerInfo: e.target.value})} className="w-full border border-blue-500 rounded p-1 text-xs outline-none" placeholder="Tên - SĐT *" autoFocus/></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.address || ''} onChange={e => setEditFormData({...editFormData, address: e.target.value})} className="w-full border border-gray-300 rounded p-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Địa chỉ"/></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.productName || ''} onChange={e => setEditFormData({...editFormData, productName: e.target.value})} className="w-full border border-gray-300 rounded p-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Tên SP"/></td>
-                        <td className="px-1 py-1"><input type="number" value={editFormData.quantity || 0} onChange={e => setEditFormData({...editFormData, quantity: Number(e.target.value)})} className="w-16 border border-gray-300 rounded p-1 text-xs text-center focus:ring-1 focus:ring-blue-500 outline-none" /></td>
-                        <td className="px-1 py-1"><input type="number" value={editFormData.price || 0} onChange={e => setEditFormData({...editFormData, price: Number(e.target.value)})} className="w-24 border border-gray-300 rounded p-1 text-xs text-right focus:ring-1 focus:ring-blue-500 outline-none" /></td>
-                        <td className="px-1 py-1"><input type="number" value={editFormData.total || 0} onChange={e => setEditFormData({...editFormData, total: Number(e.target.value)})} className="w-24 border border-gray-300 bg-gray-100 rounded p-1 text-xs text-right font-bold" readOnly title="Tự động tính"/></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.trackingCode || ''} onChange={e => setEditFormData({...editFormData, trackingCode: e.target.value})} className="w-24 border border-gray-300 rounded p-1 text-xs font-mono focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Mã VĐ"/></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.status || ''} onChange={e => setEditFormData({...editFormData, status: e.target.value})} className="w-24 border border-gray-300 rounded p-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Trạng thái"/></td>
-                        <td className="px-1 py-1"><input type="number" value={editFormData.shippingFee || 0} onChange={e => setEditFormData({...editFormData, shippingFee: Number(e.target.value)})} className="w-20 border border-gray-300 rounded p-1 text-xs text-right focus:ring-1 focus:ring-blue-500 outline-none" /></td>
-                        <td className="px-1 py-1"><input type="text" value={editFormData.notes || ''} onChange={e => setEditFormData({...editFormData, notes: e.target.value})} className="w-32 border border-gray-300 rounded p-1 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Ghi chú"/></td>
+                        <td className="px-1 py-1"><input type="date" value={editFormData.orderDate || ''} onChange={e => setEditFormData({...editFormData, orderDate: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" /></td>
+                        <td className="px-1 py-1"><input type="text" value={editFormData.source || ''} onChange={e => setEditFormData({...editFormData, source: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Nguồn" /></td>
+                        <td className="px-1 py-1"><input type="text" value={editFormData.customerInfo || ''} onChange={e => setEditFormData({...editFormData, customerInfo: e.target.value})} className="w-full border border-blue-500 rounded p-1.5 text-xs outline-none min-w-[250px]" placeholder="Tên - SĐT *" autoFocus/></td>
+                        <td className="px-1 py-1"><input type="text" value={editFormData.address || ''} onChange={e => setEditFormData({...editFormData, address: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none min-w-[250px]" placeholder="Địa chỉ"/></td>
+                        <td className="px-1 py-1"><input type="text" value={editFormData.productName || ''} onChange={e => setEditFormData({...editFormData, productName: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none min-w-[250px]" placeholder="Tên SP"/></td>
+                        <td className="px-1 py-1"><input type="number" value={editFormData.quantity || 0} onChange={e => setEditFormData({...editFormData, quantity: Number(e.target.value)})} className="w-16 border border-gray-300 rounded p-1.5 text-xs text-center focus:ring-1 focus:ring-blue-500 outline-none" /></td>
+                        <td className="px-1 py-1"><input type="number" value={editFormData.price || 0} onChange={e => setEditFormData({...editFormData, price: Number(e.target.value)})} className="w-24 border border-gray-300 rounded p-1.5 text-xs text-right focus:ring-1 focus:ring-blue-500 outline-none" /></td>
+                        <td className="px-1 py-1"><input type="number" value={editFormData.total || 0} onChange={e => setEditFormData({...editFormData, total: Number(e.target.value)})} className="w-24 border border-gray-300 bg-gray-100 rounded p-1.5 text-xs text-right font-bold" readOnly title="Tự động tính"/></td>
+                        <td className="px-1 py-1"><input type="text" value={editFormData.trackingCode || ''} onChange={e => setEditFormData({...editFormData, trackingCode: e.target.value})} className="w-28 border border-gray-300 rounded p-1.5 text-xs font-mono focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Mã VĐ"/></td>
+                        <td className="px-1 py-1">
+                          <select value={editFormData.status || ''} onChange={e => setEditFormData({...editFormData, status: e.target.value})} className="w-32 border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none bg-white">
+                            <option value="">Chọn...</option>
+                            {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-1 py-1"><input type="number" value={editFormData.shippingFee || 0} onChange={e => setEditFormData({...editFormData, shippingFee: Number(e.target.value)})} className="w-24 border border-gray-300 rounded p-1.5 text-xs text-right focus:ring-1 focus:ring-blue-500 outline-none" /></td>
+                        <td className="px-1 py-1"><input type="text" value={editFormData.notes || ''} onChange={e => setEditFormData({...editFormData, notes: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none min-w-[200px]" placeholder="Ghi chú"/></td>
                       </>
                     ) : (
                       /* VIEW MODE: Hiển thị Text bình thường */
                       <>
                         <td className="px-3 py-2 text-gray-700">{order.orderDate}</td>
                         <td className="px-3 py-2 text-gray-500 text-xs truncate max-w-[120px]" title={order.source}>{order.source}</td>
-                        <td className="px-3 py-2 font-semibold text-indigo-700 truncate max-w-[200px]" title={order.customerInfo}>{order.customerInfo}</td>
-                        <td className="px-3 py-2 text-gray-500 text-xs truncate max-w-[200px]" title={order.address}>{order.address}</td>
-                        <td className="px-3 py-2 text-gray-800 truncate max-w-[180px]" title={order.productName}>{order.productName}</td>
+                        <td className="px-3 py-2 font-semibold text-indigo-700 truncate min-w-[250px] whitespace-normal" title={order.customerInfo}>{order.customerInfo}</td>
+                        <td className="px-3 py-2 text-gray-500 text-xs truncate min-w-[250px] whitespace-normal" title={order.address}>{order.address}</td>
+                        <td className="px-3 py-2 text-gray-800 truncate min-w-[250px] whitespace-normal" title={order.productName}>{order.productName}</td>
                         <td className="px-3 py-2 text-center font-medium">{order.quantity}</td>
                         <td className="px-3 py-2 text-right text-gray-600">{formatMoney(order.price)}</td>
                         <td className="px-3 py-2 text-right font-bold text-green-600 bg-green-50/30">{formatMoney(order.total)}</td>
                         <td className="px-3 py-2 font-mono text-xs text-blue-600">{order.trackingCode}</td>
                         <td className="px-3 py-2">
-                          <span className={`px-2 py-0.5 text-[11px] font-medium rounded border ${
-                            order.status.toLowerCase().includes('thành công') || order.status.toLowerCase().includes('đã nhận') ? 'bg-green-50 text-green-700 border-green-200' :
-                            order.status.toLowerCase().includes('hủy') || order.status.toLowerCase().includes('hoàn') ? 'bg-red-50 text-red-700 border-red-200' :
+                          <span className={`px-2.5 py-1 text-[11px] font-medium rounded-full border ${
+                            order.status === 'Phát thành công' ? 'bg-green-50 text-green-700 border-green-200' :
+                            order.status === 'Đang hoàn' || order.status === 'Hủy' ? 'bg-red-50 text-red-700 border-red-200' :
+                            order.status === 'Đang giao hàng' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                             'bg-gray-50 text-gray-600 border-gray-200'
                           }`}>
-                            {order.status || 'Chưa XL'}
+                            {order.status || 'Chưa xử lý'}
                           </span>
                         </td>
                         <td className="px-3 py-2 text-right text-gray-500 text-xs">{formatMoney(order.shippingFee)}</td>
-                        <td className="px-3 py-2 text-gray-500 text-xs truncate max-w-[150px]" title={order.notes}>{order.notes}</td>
+                        <td className="px-3 py-2 text-gray-500 text-xs min-w-[200px] whitespace-normal" title={order.notes}>{order.notes}</td>
                       </>
                     )}
 
@@ -341,8 +367,8 @@ export function OrderManagement({ projectId }: Props) {
                       <td className="px-3 py-2 text-center sticky right-0 bg-white/90 backdrop-blur shadow-[-5px_0_10px_rgba(0,0,0,0.02)] group-hover:bg-blue-50/90">
                         {isEditing ? (
                           <div className="flex items-center justify-center gap-1">
-                            <button onClick={saveInlineEdit} disabled={isSavingEdit} className="p-1.5 text-white bg-green-500 hover:bg-green-600 rounded-md shadow-sm"><Check className="w-4 h-4" /></button>
-                            <button onClick={cancelInlineEdit} className="p-1.5 text-gray-500 bg-gray-200 hover:bg-gray-300 rounded-md"><X className="w-4 h-4" /></button>
+                            <button onClick={saveInlineEdit} disabled={isSavingEdit} className="p-1.5 text-white bg-green-500 hover:bg-green-600 rounded-md shadow-sm" title="Lưu lại"><Check className="w-4 h-4" /></button>
+                            <button onClick={cancelInlineEdit} className="p-1.5 text-gray-500 bg-gray-200 hover:bg-gray-300 rounded-md" title="Hủy"><X className="w-4 h-4" /></button>
                           </div>
                         ) : (
                           <div className="flex items-center justify-center gap-1">
@@ -414,11 +440,7 @@ export function OrderManagement({ projectId }: Props) {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái</label>
                   <select value={addFormData.status} onChange={e => setAddFormData({...addFormData, status: e.target.value})} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm bg-white">
-                    <option value="">Chưa xử lý</option>
-                    <option value="Đang giao hàng">Đang giao hàng</option>
-                    <option value="Phát thành công">Phát thành công / Đã nhận</option>
-                    <option value="Đang hoàn">Đang hoàn</option>
-                    <option value="Hủy">Đã Hủy</option>
+                    {STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
 
