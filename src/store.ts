@@ -269,6 +269,7 @@ export const deleteDailyLog = async (id: string): Promise<boolean> => {
 export interface Order {
   id: string;
   projectId: string;
+  sheetName: string; // <-- Đã thêm
   orderDate: string;
   source: string;
   customerInfo: string;
@@ -297,6 +298,7 @@ export const fetchOrders = async (projectId: string): Promise<Order[]> => {
 
   return data.map(d => ({
     id: d.id, projectId: d.project_id,
+    sheetName: d.sheet_name || 'Bảng chung', // <-- Đã thêm
     orderDate: d.order_date || '', source: d.source || '',
     customerInfo: d.customer_info || '', address: d.address || '',
     productName: d.product_name || '', quantity: Number(d.quantity),
@@ -311,7 +313,9 @@ export const insertOrder = async (order: Omit<Order, 'id'>): Promise<Order | nul
   const supabase = getSupabase();
   if (!supabase) return null;
   const { data, error } = await supabase.from('orders').insert([{
-    project_id: order.projectId, order_date: order.orderDate || null,
+    project_id: order.projectId, 
+    sheet_name: order.sheetName || 'Bảng chung', // <-- Đã thêm
+    order_date: order.orderDate || null,
     source: order.source, customer_info: order.customerInfo,
     address: order.address, product_name: order.productName,
     quantity: order.quantity, price: order.price, total: order.total,
@@ -322,7 +326,9 @@ export const insertOrder = async (order: Omit<Order, 'id'>): Promise<Order | nul
   if (error) { alert(`Lỗi thêm đơn: ${error.message}`); return null; }
   
   return {
-    id: data.id, projectId: data.project_id, orderDate: data.order_date || '',
+    id: data.id, projectId: data.project_id, 
+    sheetName: data.sheet_name || 'Bảng chung', // <-- Đã thêm
+    orderDate: data.order_date || '',
     source: data.source || '', customerInfo: data.customer_info || '', address: data.address || '',
     productName: data.product_name || '', quantity: Number(data.quantity), price: Number(data.price),
     total: Number(data.total), notes: data.notes || '', shippingDate: data.shipping_date || '',
@@ -335,6 +341,7 @@ export const updateOrder = async (id: string, order: Partial<Order>): Promise<bo
   if (!supabase) return false;
   
   const updates: any = {};
+  if (order.sheetName !== undefined) updates.sheet_name = order.sheetName; // <-- Đã thêm
   if (order.orderDate !== undefined) updates.order_date = order.orderDate || null;
   if (order.source !== undefined) updates.source = order.source;
   if (order.customerInfo !== undefined) updates.customer_info = order.customerInfo;
@@ -345,7 +352,7 @@ export const updateOrder = async (id: string, order: Partial<Order>): Promise<bo
   if (order.total !== undefined) updates.total = order.total;
   if (order.notes !== undefined) updates.notes = order.notes;
   if (order.shippingDate !== undefined) updates.shipping_date = order.shippingDate || null;
-  if (order.trackingCode !== undefined) updates.tracking_code = order.trackingCode;
+  if (order.trackingCode !== undefined) updates.trackingCode = order.trackingCode;
   if (order.status !== undefined) updates.status = order.status;
   if (order.shippingFee !== undefined) updates.shipping_fee = order.shippingFee;
 
