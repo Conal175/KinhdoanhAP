@@ -130,3 +130,136 @@ export function useSyncData<T>(projectId: string, dataKey: string, initialValue:
 
   return { data, syncData, loading };
 }
+// ==========================================
+// 4. API CHO BẢNG DAILY_LOGS (TỐI ƯU HIỆU NĂNG)
+// ==========================================
+import type { DailyLog } from './types';
+
+// Lấy danh sách báo cáo
+export const fetchDailyLogs = async (projectId: string): Promise<DailyLog[]> => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error("Lỗi lấy báo cáo:", error);
+    return [];
+  }
+
+  // Chuyển đổi format tên cột từ DB sang chuẩn Frontend
+  return data.map(d => ({
+    id: d.id,
+    projectId: d.project_id,
+    day: d.day,
+    month: d.month,
+    year: d.year,
+    adName: d.ad_name,
+    adLink: d.ad_link,
+    spend: Number(d.spend),
+    impressions: Number(d.impressions),
+    clicks: Number(d.clicks),
+    messages: Number(d.messages),
+    orders: Number(d.orders),
+    revenue: Number(d.revenue),
+    issues: d.issues,
+    optimizations: d.optimizations
+  }));
+};
+
+// Thêm 1 báo cáo mới
+export const insertDailyLog = async (log: Omit<DailyLog, 'id'>): Promise<DailyLog | null> => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .insert([{
+      project_id: log.projectId,
+      day: log.day,
+      month: log.month,
+      year: log.year,
+      ad_name: log.adName,
+      ad_link: log.adLink,
+      spend: log.spend,
+      impressions: log.impressions,
+      clicks: log.clicks,
+      messages: log.messages,
+      orders: log.orders,
+      revenue: log.revenue,
+      issues: log.issues,
+      optimizations: log.optimizations
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    alert(`Lỗi thêm báo cáo: ${error.message}`);
+    return null;
+  }
+  
+  return {
+    id: data.id,
+    projectId: data.project_id,
+    day: data.day,
+    month: data.month,
+    year: data.year,
+    adName: data.ad_name,
+    adLink: data.ad_link,
+    spend: Number(data.spend),
+    impressions: Number(data.impressions),
+    clicks: Number(data.clicks),
+    messages: Number(data.messages),
+    orders: Number(data.orders),
+    revenue: Number(data.revenue),
+    issues: data.issues,
+    optimizations: data.optimizations
+  };
+};
+
+// Cập nhật 1 báo cáo
+export const updateDailyLog = async (id: string, log: Partial<DailyLog>): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+
+  const updates: any = {};
+  if (log.adName !== undefined) updates.ad_name = log.adName;
+  if (log.adLink !== undefined) updates.ad_link = log.adLink;
+  if (log.spend !== undefined) updates.spend = log.spend;
+  if (log.impressions !== undefined) updates.impressions = log.impressions;
+  if (log.clicks !== undefined) updates.clicks = log.clicks;
+  if (log.messages !== undefined) updates.messages = log.messages;
+  if (log.orders !== undefined) updates.orders = log.orders;
+  if (log.revenue !== undefined) updates.revenue = log.revenue;
+  if (log.issues !== undefined) updates.issues = log.issues;
+  if (log.optimizations !== undefined) updates.optimizations = log.optimizations;
+
+  const { error } = await supabase
+    .from('daily_logs')
+    .update(updates)
+    .eq('id', id);
+
+  if (error) {
+    alert(`Lỗi cập nhật báo cáo: ${error.message}`);
+    return false;
+  }
+  return true;
+};
+
+// Xóa 1 báo cáo
+export const deleteDailyLog = async (id: string): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from('daily_logs')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    alert(`Lỗi xóa báo cáo: ${error.message}`);
+    return false;
+  }
+  return true;
+};
