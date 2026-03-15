@@ -17,21 +17,43 @@ export function OrderManagement({ projectId }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Lấy thêm cờ isAdmin để phân quyền xóa bảng
   const { checkPermission, isAdmin } = useAuth(); 
   const canEdit = checkPermission('orders', 'edit');
   const canDelete = checkPermission('orders', 'delete');
 
-  // ================= QUẢN LÝ CÁC BẢNG (SHEETS) =================
-  const [activeSheet, setActiveSheet] = useState<string>('Bảng chung');
-  const [localNewSheets, setLocalNewSheets] = useState<string[]>([]);
+  // ================= QUẢN LÝ CÁC BẢNG (SHEETS) BẰNG LOCALSTORAGE CHỐNG MẤT DỮ LIỆU =================
+  const [localNewSheets, setLocalNewSheets] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(`custom_sheets_${projectId}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
 
-  const allSheets = Array.from(new Set([
-    'Bảng chung', 
-    ...orders.map(o => o.sheetName || 'Bảng chung'),
-    ...localNewSheets
-  ]));
+  const saveLocalSheets = (sheets: string[]) => {
+    setLocalNewSheets(sheets);
+    localStorage.setItem(`custom_sheets_${projectId}`, JSON.stringify(sheets));
+  };
 
+  // Tổng hợp danh sách bảng từ Dữ liệu thực tế + Dữ liệu tạo bằng tay
+  const allSheetsFromData = Array.from(new Set(orders.map(o => o.sheetName || 'Bảng chung').filter(s => s !== 'Bảng chung')));
+  const combinedSheets = Array.from(new Set([...allSheetsFromData, ...localNewSheets]));
+  
+  // Nếu dự án trống trơn, tạo mặc định 1 bảng cho nhân viên
+  if (combinedSheets.length === 0) combinedSheets.push('Team 1');
+
+  // Bảng chung chỉ hiện cho Admin
+  const allTabs = isAdmin ? ['Bảng chung', ...combinedSheets] : combinedSheets;
+
+  const [activeSheet, setActiveSheet] = useState<string>(isAdmin ? 'Bảng chung' : combinedSheets[0]);
+
+  // Chặn nhân viên ở lại "Bảng chung" nếu họ bị mất quyền Admin
+  useEffect(() => {
+    if (!isAdmin && activeSheet === 'Bảng chung') {
+      setActiveSheet(combinedSheets[0]);
+    }
+  }, [isAdmin, activeSheet]);
+
+  // ================= XỬ LÝ NGÀY THÁNG =================
   const getLocalDateString = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -55,8 +77,8 @@ export function OrderManagement({ projectId }: Props) {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSavingAdd, setIsSavingAdd] = useState(false);
-  const [addFormData, setAddFormData] = useState<Omit<Order, 'id' | 'projectId' | 'sheetName'>>({
-    orderDate: todayString, source: '', customerInfo: '', address: '',
+  const [addFormData, setAddFormData] = useState<Omit<Order, 'id' | 'projectId'>>({
+    sheetName: '', orderDate: todayString, source: '', customerInfo: '', address: '',
     productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: 'Chưa xử lý', shippingFee: 0
   });
 
@@ -75,8 +97,9 @@ export function OrderManagement({ projectId }: Props) {
     setLoading(false);
   };
 
-  // ================= XỬ LÝ LỌC =================
-  const currentSheetOrders = orders.filter(o => (o.sheetName || 'Bảng chung') === activeSheet);
+  // ================= LỌC DỮ LIỆU HIỂN THỊ =================
+  // Bảng chung lấy TẤT CẢ, bảng con lấy đúng dữ liệu của bảng đó
+  const currentSheetOrders = activeSheet === 'Bảng chung' ? orders : orders.filter(o => (o.sheetName || 'Bảng chung') === activeSheet);
 
   const filteredOrders = currentSheetOrders.filter(o => {
     const matchDateFrom = !filters.dateFrom || o.orderDate >= filters.dateFrom;
@@ -98,8 +121,8 @@ export function OrderManagement({ projectId }: Props) {
     const sheetName = prompt('Nhập tên Bảng quản lý mới (VD: Đơn Tháng 3, Team A...):');
     if (sheetName && sheetName.trim()) {
       const cleanName = sheetName.trim();
-      if (!allSheets.includes(cleanName)) {
-        setLocalNewSheets([...localNewSheets, cleanName]);
+      if (!allTabs.includes(cleanName)) {
+        saveLocalSheets([...localNewSheets, cleanName]);
       }
       setActiveSheet(cleanName);
     }
@@ -107,27 +130,39 @@ export function OrderManagement({ projectId }: Props) {
 
   const handleDeleteSheet = async () => {
     if (!isAdmin) return;
-    if (activeSheet === 'Bảng chung') {
-      alert('Không thể xóa "Bảng chung" mặc định!');
-      return;
-    }
 
-    const confirmDelete = window.confirm(`⚠️ CẢNH BÁO NGUY HIỂM:\n\nBạn có chắc chắn muốn XÓA HOÀN TOÀN bảng "${activeSheet}" cùng tất cả ${currentSheetOrders.length} đơn hàng bên trong không?\n\nHành động này KHÔNG THỂ HOÀN TÁC!`);
+    const isAll = activeSheet === 'Bảng chung';
+    const confirmDelete = window.confirm(
+      isAll 
+      ? `⚠️ CẢNH BÁO NGUY HIỂM TỘT ĐỘ:\n\nBạn đang ở "Bảng chung". Việc xóa sẽ XÓA SẠCH TOÀN BỘ ${orders.length} ĐƠN HÀNG của TẤT CẢ CÁC BẢNG trong dự án này!\n\nHành động này KHÔNG THỂ HOÀN TÁC! Bạn có chắc chắn không?`
+      : `⚠️ CẢNH BÁO NGUY HIỂM:\n\nBạn có chắc chắn muốn xóa TOÀN BỘ đơn hàng trong bảng "${activeSheet}" không?\n\nHành động này KHÔNG THỂ HOÀN TÁC!`
+    );
     
     if (confirmDelete) {
-      const success = await deleteOrdersBySheet(projectId, activeSheet);
+      const success = await deleteOrdersBySheet(projectId, isAll ? 'ALL_SHEETS' : activeSheet);
       if (success) {
-        // Lọc bỏ các đơn hàng thuộc bảng vừa xóa khỏi State
-        setOrders(orders.filter(o => (o.sheetName || 'Bảng chung') !== activeSheet));
-        // Xóa tên bảng khỏi danh sách tạo tạm
-        setLocalNewSheets(localNewSheets.filter(s => s !== activeSheet));
-        // Quay về Bảng chung
-        setActiveSheet('Bảng chung');
+        if (isAll) {
+          setOrders([]);
+          saveLocalSheets([]);
+        } else {
+          setOrders(orders.filter(o => (o.sheetName || 'Bảng chung') !== activeSheet));
+          saveLocalSheets(localNewSheets.filter(s => s !== activeSheet));
+          setActiveSheet('Bảng chung');
+        }
       }
     }
   };
 
   // ================= XỬ LÝ THÊM MỚI (MODAL) =================
+  const openAddModal = () => {
+    const targetSheet = activeSheet === 'Bảng chung' ? combinedSheets[0] : activeSheet;
+    setAddFormData({
+      sheetName: targetSheet, orderDate: todayString, source: '', customerInfo: '', address: '',
+      productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: 'Chưa xử lý', shippingFee: 0
+    });
+    setShowAddModal(true);
+  };
+
   useEffect(() => {
     setAddFormData(prev => ({ ...prev, total: prev.quantity * prev.price }));
   }, [addFormData.quantity, addFormData.price]);
@@ -135,14 +170,10 @@ export function OrderManagement({ projectId }: Props) {
   const handleSaveAdd = async () => {
     if (!addFormData.customerInfo.trim() || !canEdit) return;
     setIsSavingAdd(true);
-    const newOrder = await insertOrder({ projectId, sheetName: activeSheet, ...addFormData });
+    const newOrder = await insertOrder({ projectId, ...addFormData });
     if (newOrder) {
       setOrders([newOrder, ...orders]);
       setShowAddModal(false);
-      setAddFormData({
-        orderDate: todayString, source: '', customerInfo: '', address: '',
-        productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: 'Chưa xử lý', shippingFee: 0
-      });
     }
     setIsSavingAdd(false);
   };
@@ -210,6 +241,13 @@ export function OrderManagement({ projectId }: Props) {
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !canEdit) return;
+
+    if (activeSheet === 'Bảng chung') {
+      alert('Vui lòng chọn một Bảng con cụ thể (VD: Team 1) để nhập dữ liệu Excel!');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setIsImporting(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -278,16 +316,17 @@ export function OrderManagement({ projectId }: Props) {
       {/* THIẾT KẾ CÁC TAB / BẢNG (SHEETS) */}
       <div className="flex-none bg-white rounded-t-2xl shadow-sm border border-gray-100 px-4 pt-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
         <LayoutPanelLeft className="w-5 h-5 text-gray-400 mr-2 shrink-0" />
-        {allSheets.map(sheet => (
+        {allTabs.map(sheet => (
           <button
             key={sheet}
             onClick={() => setActiveSheet(sheet)}
-            className={`px-5 py-2.5 rounded-t-xl font-semibold text-sm whitespace-nowrap transition-all border-b-2 ${
+            className={`px-5 py-2.5 rounded-t-xl font-semibold text-sm whitespace-nowrap transition-all border-b-2 flex items-center gap-2 ${
               activeSheet === sheet 
               ? 'bg-indigo-50/80 text-indigo-700 border-indigo-600' 
               : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50 border-transparent'
             }`}
           >
+            {sheet === 'Bảng chung' && <ShoppingBag className="w-4 h-4" />}
             {sheet}
           </button>
         ))}
@@ -306,13 +345,12 @@ export function OrderManagement({ projectId }: Props) {
       <div className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-b-2xl shadow-sm border border-gray-100 mt-0">
         <div>
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            Đang mở: <span className="text-indigo-600">{activeSheet}</span>
-            {/* HIỂN THỊ NÚT XÓA BẢNG DÀNH CHO ADMIN */}
-            {isAdmin && activeSheet !== 'Bảng chung' && (
+            Đang xem: <span className="text-indigo-600">{activeSheet}</span>
+            {isAdmin && (
               <button 
                 onClick={handleDeleteSheet} 
                 className="p-1.5 ml-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                title={`Xóa toàn bộ bảng "${activeSheet}"`}
+                title={`Xóa toàn bộ dữ liệu của ${activeSheet === 'Bảng chung' ? 'TẤT CẢ CÁC BẢNG' : 'bảng này'}`}
               >
                 <Trash2 className="w-5 h-5" />
               </button>
@@ -331,12 +369,12 @@ export function OrderManagement({ projectId }: Props) {
           </button>
           {canEdit && (
             <>
-              <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 rounded-xl border border-transparent hover:border-blue-200 disabled:opacity-50">
+              <button onClick={() => fileInputRef.current?.click()} disabled={isImporting || activeSheet === 'Bảng chung'} className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl border border-transparent transition-colors ${activeSheet === 'Bảng chung' ? 'text-gray-400 bg-gray-100 cursor-not-allowed' : 'text-blue-700 hover:bg-blue-50 hover:border-blue-200 disabled:opacity-50'}`} title={activeSheet === 'Bảng chung' ? 'Bạn phải chọn một bảng cụ thể để nhập file' : 'Nhập file Excel'}>
                 {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Nhập
               </button>
               <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls, .csv" className="hidden" />
               
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-5 py-2 rounded-xl hover:from-indigo-700 hover:to-blue-700 font-medium shadow-md transition-all">
+              <button onClick={openAddModal} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-5 py-2 rounded-xl hover:from-indigo-700 hover:to-blue-700 font-medium shadow-md transition-all">
                 <Plus className="w-4 h-4" /> Thêm Đơn
               </button>
             </>
@@ -378,6 +416,8 @@ export function OrderManagement({ projectId }: Props) {
                 <th className="px-2 py-3 w-10 text-center border-r border-gray-200">#</th>
                 <th className="px-2 py-3 border-r border-gray-200">Ngày HĐ</th>
                 <th className="px-2 py-3 border-r border-gray-200 min-w-[100px]">Nguồn</th>
+                {/* HIỂN THỊ CỘT THUỘC BẢNG KHI Ở BẢNG CHUNG */}
+                {activeSheet === 'Bảng chung' && <th className="px-2 py-3 border-r border-gray-200 min-w-[120px] text-indigo-700">Thuộc Bảng</th>}
                 <th className="px-2 py-3 border-r border-gray-200 min-w-[180px]">Khách hàng (Tên-SĐT)</th>
                 <th className="px-2 py-3 border-r border-gray-200 min-w-[200px]">Địa chỉ giao</th>
                 <th className="px-2 py-3 border-r border-gray-200 min-w-[180px]">Sản phẩm</th>
@@ -393,7 +433,7 @@ export function OrderManagement({ projectId }: Props) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredOrders.length === 0 ? (
-                <tr><td colSpan={14} className="px-4 py-12 text-center text-gray-500 font-medium">Bảng này hiện chưa có đơn hàng nào.</td></tr>
+                <tr><td colSpan={15} className="px-4 py-12 text-center text-gray-500 font-medium">Bảng này hiện chưa có đơn hàng nào.</td></tr>
               ) : filteredOrders.map((order, index) => {
                 const isEditing = editingRowId === order.id;
                 const isSelected = selectedRowId === order.id;
@@ -413,6 +453,14 @@ export function OrderManagement({ projectId }: Props) {
                       <>
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'orderDate'} type="date" value={editFormData.orderDate || ''} onChange={e => setEditFormData({...editFormData, orderDate: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" /></td>
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'source'} type="text" value={editFormData.source || ''} onChange={e => setEditFormData({...editFormData, source: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Nguồn" /></td>
+                        {/* TRƯỜNG CHỈNH SỬA THUỘC BẢNG NÀO */}
+                        {activeSheet === 'Bảng chung' && (
+                          <td className="px-1 py-1 border-r border-gray-100">
+                            <select autoFocus={focusedField === 'sheetName'} value={editFormData.sheetName || ''} onChange={e => setEditFormData({...editFormData, sheetName: e.target.value})} className="w-full border border-purple-300 rounded p-1.5 text-xs font-medium text-purple-700 outline-none bg-purple-50">
+                              {combinedSheets.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </td>
+                        )}
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'customerInfo'} type="text" value={editFormData.customerInfo || ''} onChange={e => setEditFormData({...editFormData, customerInfo: e.target.value})} className="w-full border border-blue-500 rounded p-1.5 text-xs outline-none" placeholder="Tên - SĐT *"/></td>
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'address'} type="text" value={editFormData.address || ''} onChange={e => setEditFormData({...editFormData, address: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Địa chỉ"/></td>
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'productName'} type="text" value={editFormData.productName || ''} onChange={e => setEditFormData({...editFormData, productName: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Tên SP"/></td>
@@ -433,6 +481,9 @@ export function OrderManagement({ projectId }: Props) {
                       <>
                         <td onDoubleClick={() => startInlineEdit(order, 'orderDate')} className="px-2 py-2 text-gray-700 border-r border-gray-100">{order.orderDate}</td>
                         <td onDoubleClick={() => startInlineEdit(order, 'source')} className="px-2 py-2 text-gray-500 truncate max-w-[120px] border-r border-gray-100" title={order.source}>{order.source}</td>
+                        {activeSheet === 'Bảng chung' && (
+                          <td onDoubleClick={() => startInlineEdit(order, 'sheetName')} className="px-2 py-2 font-semibold text-purple-600 border-r border-gray-100 bg-purple-50/20">{order.sheetName || 'Bảng chung'}</td>
+                        )}
                         <td onDoubleClick={() => startInlineEdit(order, 'customerInfo')} className="px-2 py-2 font-semibold text-indigo-700 truncate max-w-[200px] border-r border-gray-100" title={order.customerInfo}>{order.customerInfo}</td>
                         <td onDoubleClick={() => startInlineEdit(order, 'address')} className="px-2 py-2 text-gray-600 truncate max-w-[220px] border-r border-gray-100" title={order.address}>{order.address}</td>
                         <td onDoubleClick={() => startInlineEdit(order, 'productName')} className="px-2 py-2 text-gray-800 font-medium truncate max-w-[200px] border-r border-gray-100" title={order.productName}>{order.productName}</td>
@@ -490,13 +541,22 @@ export function OrderManagement({ projectId }: Props) {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-blue-50">
               <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
-                <Plus className="w-6 h-6 text-indigo-600" /> Thêm Đơn Vào: {activeSheet}
+                <Plus className="w-6 h-6 text-indigo-600" /> Thêm Đơn Mới
               </h3>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-red-500 bg-white p-1.5 rounded-full shadow-sm hover:bg-red-50 transition-colors"><X className="w-5 h-5" /></button>
             </div>
             
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                {isAdmin && (
+                  <div className="lg:col-span-4 bg-purple-50 p-3 rounded-xl border border-purple-100 flex items-center gap-3">
+                    <label className="text-sm font-semibold text-purple-800 shrink-0">Lưu vào bảng:</label>
+                    <select value={addFormData.sheetName} onChange={e => setAddFormData({...addFormData, sheetName: e.target.value})} className="border border-purple-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-purple-500 outline-none text-purple-900 font-medium">
+                      {combinedSheets.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                )}
+
                 <div className="lg:col-span-2">
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">Khách hàng (Tên & SĐT) <span className="text-red-500">*</span></label>
                   <input type="text" autoFocus value={addFormData.customerInfo} onChange={e => setAddFormData({...addFormData, customerInfo: e.target.value})} placeholder="VD: Anh Nam - 0987654321" className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all" />
