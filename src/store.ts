@@ -366,3 +366,21 @@ export const deleteOrder = async (id: string): Promise<boolean> => {
   const { error } = await supabase.from('orders').delete().eq('id', id);
   return !error;
 };
+
+// Xóa toàn bộ Bảng (Sheet) cùng các đơn hàng bên trong
+export const deleteOrdersBySheet = async (projectId: string, sheetName: string): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  
+  const { error } = await supabase
+    .from('orders')
+    .delete()
+    .eq('project_id', projectId)
+    .eq('sheet_name', sheetName);
+
+  if (error) {
+    alert(`Lỗi xóa bảng: ${error.message}`);
+    return false;
+  }
+  return true;
+};
