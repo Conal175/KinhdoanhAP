@@ -4,7 +4,7 @@ import {
   Save, Search, Filter, RefreshCcw, Check, LayoutPanelLeft
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Order, fetchOrders, insertOrder, updateOrder, deleteOrder } from '../store';
+import { Order, fetchOrders, insertOrder, updateOrder, deleteOrder, deleteOrdersBySheet } from '../store';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Props { projectId: string; }
@@ -17,15 +17,15 @@ export function OrderManagement({ projectId }: Props) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const { checkPermission } = useAuth(); 
+  // Lấy thêm cờ isAdmin để phân quyền xóa bảng
+  const { checkPermission, isAdmin } = useAuth(); 
   const canEdit = checkPermission('orders', 'edit');
   const canDelete = checkPermission('orders', 'delete');
 
   // ================= QUẢN LÝ CÁC BẢNG (SHEETS) =================
   const [activeSheet, setActiveSheet] = useState<string>('Bảng chung');
-  const [localNewSheets, setLocalNewSheets] = useState<string[]>([]); // Lưu tạm các bảng vừa tạo
+  const [localNewSheets, setLocalNewSheets] = useState<string[]>([]);
 
-  // Danh sách toàn bộ các bảng hiện có (Lấy từ DB + Bảng vừa tạo tay)
   const allSheets = Array.from(new Set([
     'Bảng chung', 
     ...orders.map(o => o.sheetName || 'Bảng chung'),
@@ -75,11 +75,9 @@ export function OrderManagement({ projectId }: Props) {
     setLoading(false);
   };
 
-  // ================= XỬ LÝ LỌC DỮ LIỆU THEO BẢNG & BỘ LỌC =================
-  // 1. Lọc lấy các đơn hàng của Bảng (Tab) đang được chọn
+  // ================= XỬ LÝ LỌC =================
   const currentSheetOrders = orders.filter(o => (o.sheetName || 'Bảng chung') === activeSheet);
 
-  // 2. Tiếp tục lọc qua thanh công cụ tìm kiếm
   const filteredOrders = currentSheetOrders.filter(o => {
     const matchDateFrom = !filters.dateFrom || o.orderDate >= filters.dateFrom;
     const matchDateTo = !filters.dateTo || o.orderDate <= filters.dateTo;
@@ -95,7 +93,7 @@ export function OrderManagement({ projectId }: Props) {
     setFilters({ dateFrom: '', dateTo: '', source: '', customer: '', product: '', tracking: '', status: '' });
   };
 
-  // ================= TẠO BẢNG MỚI =================
+  // ================= TẠO BẢNG & XÓA BẢNG =================
   const handleAddNewSheet = () => {
     const sheetName = prompt('Nhập tên Bảng quản lý mới (VD: Đơn Tháng 3, Team A...):');
     if (sheetName && sheetName.trim()) {
@@ -107,6 +105,28 @@ export function OrderManagement({ projectId }: Props) {
     }
   };
 
+  const handleDeleteSheet = async () => {
+    if (!isAdmin) return;
+    if (activeSheet === 'Bảng chung') {
+      alert('Không thể xóa "Bảng chung" mặc định!');
+      return;
+    }
+
+    const confirmDelete = window.confirm(`⚠️ CẢNH BÁO NGUY HIỂM:\n\nBạn có chắc chắn muốn XÓA HOÀN TOÀN bảng "${activeSheet}" cùng tất cả ${currentSheetOrders.length} đơn hàng bên trong không?\n\nHành động này KHÔNG THỂ HOÀN TÁC!`);
+    
+    if (confirmDelete) {
+      const success = await deleteOrdersBySheet(projectId, activeSheet);
+      if (success) {
+        // Lọc bỏ các đơn hàng thuộc bảng vừa xóa khỏi State
+        setOrders(orders.filter(o => (o.sheetName || 'Bảng chung') !== activeSheet));
+        // Xóa tên bảng khỏi danh sách tạo tạm
+        setLocalNewSheets(localNewSheets.filter(s => s !== activeSheet));
+        // Quay về Bảng chung
+        setActiveSheet('Bảng chung');
+      }
+    }
+  };
+
   // ================= XỬ LÝ THÊM MỚI (MODAL) =================
   useEffect(() => {
     setAddFormData(prev => ({ ...prev, total: prev.quantity * prev.price }));
@@ -115,7 +135,6 @@ export function OrderManagement({ projectId }: Props) {
   const handleSaveAdd = async () => {
     if (!addFormData.customerInfo.trim() || !canEdit) return;
     setIsSavingAdd(true);
-    // Lưu đơn kèm theo tên bảng đang chọn
     const newOrder = await insertOrder({ projectId, sheetName: activeSheet, ...addFormData });
     if (newOrder) {
       setOrders([newOrder, ...orders]);
@@ -183,8 +202,6 @@ export function OrderManagement({ projectId }: Props) {
     }
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    
-    // Tên sheet trong file excel (giới hạn 31 ký tự)
     const validSheetName = activeSheet.substring(0, 31).replace(/[\\/?*\[\]]/g, '_');
     XLSX.utils.book_append_sheet(workbook, worksheet, validSheetName);
     XLSX.writeFile(workbook, `Danh_Sach_Don_${validSheetName}.xlsx`);
@@ -228,7 +245,6 @@ export function OrderManagement({ projectId }: Props) {
           headers.forEach((h, index) => { if (h) row[h] = rowArray[index]; });
 
           if (row['tên khách hàng']) {
-            // Lưu dữ liệu đẩy thẳng vào Bảng đang kích hoạt (activeSheet)
             await insertOrder({
               projectId, 
               sheetName: activeSheet,
@@ -291,6 +307,16 @@ export function OrderManagement({ projectId }: Props) {
         <div>
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             Đang mở: <span className="text-indigo-600">{activeSheet}</span>
+            {/* HIỂN THỊ NÚT XÓA BẢNG DÀNH CHO ADMIN */}
+            {isAdmin && activeSheet !== 'Bảng chung' && (
+              <button 
+                onClick={handleDeleteSheet} 
+                className="p-1.5 ml-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title={`Xóa toàn bộ bảng "${activeSheet}"`}
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
           </h2>
           <p className="text-sm text-gray-500 mt-1">Tìm thấy {filteredOrders.length} đơn hàng trong bảng này</p>
         </div>
