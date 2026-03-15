@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShoppingBag, Download, Upload, Loader2, Plus, Edit2, Trash2, X, 
-  Save, Search, Filter, RefreshCcw, Check
+  Save, Search, Filter, RefreshCcw, Check, LayoutPanelLeft
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Order, fetchOrders, insertOrder, updateOrder, deleteOrder } from '../store';
@@ -9,13 +9,8 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface Props { projectId: string; }
 
-// Danh sách trạng thái chuẩn
 const STATUS_OPTIONS = [
-  'Chưa xử lý', 
-  'Đang giao hàng', 
-  'Phát thành công', 
-  'Đang hoàn', 
-  'Hủy'
+  'Chưa xử lý', 'Đang giao hàng', 'Phát thành công', 'Đang hoàn', 'Hủy'
 ];
 
 export function OrderManagement({ projectId }: Props) {
@@ -26,7 +21,17 @@ export function OrderManagement({ projectId }: Props) {
   const canEdit = checkPermission('orders', 'edit');
   const canDelete = checkPermission('orders', 'delete');
 
-  // XỬ LÝ LỖI MÚI GIỜ: Hàm lấy ngày chuẩn local
+  // ================= QUẢN LÝ CÁC BẢNG (SHEETS) =================
+  const [activeSheet, setActiveSheet] = useState<string>('Bảng chung');
+  const [localNewSheets, setLocalNewSheets] = useState<string[]>([]); // Lưu tạm các bảng vừa tạo
+
+  // Danh sách toàn bộ các bảng hiện có (Lấy từ DB + Bảng vừa tạo tay)
+  const allSheets = Array.from(new Set([
+    'Bảng chung', 
+    ...orders.map(o => o.sheetName || 'Bảng chung'),
+    ...localNewSheets
+  ]));
+
   const getLocalDateString = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -39,26 +44,22 @@ export function OrderManagement({ projectId }: Props) {
   const firstDayOfMonth = getLocalDateString(new Date(today.getFullYear(), today.getMonth(), 1));
   const lastDayOfMonth = getLocalDateString(new Date(today.getFullYear(), today.getMonth() + 1, 0));
 
-  // ================= BỘ LỌC TÌM KIẾM =================
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-    dateFrom: firstDayOfMonth, // Mặc định từ ngày đầu tháng chuẩn xác
-    dateTo: lastDayOfMonth,    // Mặc định đến ngày cuối tháng chuẩn xác
+    dateFrom: firstDayOfMonth, dateTo: lastDayOfMonth, 
     source: '', customer: '', product: '', tracking: '', status: ''
   });
 
-  // ================= STATE QUẢN LÝ THÊM MỚI =================
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSavingAdd, setIsSavingAdd] = useState(false);
-  const [addFormData, setAddFormData] = useState<Omit<Order, 'id' | 'projectId'>>({
+  const [addFormData, setAddFormData] = useState<Omit<Order, 'id' | 'projectId' | 'sheetName'>>({
     orderDate: todayString, source: '', customerInfo: '', address: '',
     productName: '', quantity: 1, price: 0, total: 0, notes: '', shippingDate: '', trackingCode: '', status: 'Chưa xử lý', shippingFee: 0
   });
 
-  // ================= STATE SỬA TRỰC TIẾP & TƯƠNG TÁC DÒNG =================
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null); 
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Order>>({});
@@ -74,8 +75,12 @@ export function OrderManagement({ projectId }: Props) {
     setLoading(false);
   };
 
-  // ================= XỬ LÝ LỌC =================
-  const filteredOrders = orders.filter(o => {
+  // ================= XỬ LÝ LỌC DỮ LIỆU THEO BẢNG & BỘ LỌC =================
+  // 1. Lọc lấy các đơn hàng của Bảng (Tab) đang được chọn
+  const currentSheetOrders = orders.filter(o => (o.sheetName || 'Bảng chung') === activeSheet);
+
+  // 2. Tiếp tục lọc qua thanh công cụ tìm kiếm
+  const filteredOrders = currentSheetOrders.filter(o => {
     const matchDateFrom = !filters.dateFrom || o.orderDate >= filters.dateFrom;
     const matchDateTo = !filters.dateTo || o.orderDate <= filters.dateTo;
     const matchSource = !filters.source || o.source.toLowerCase().includes(filters.source.toLowerCase());
@@ -90,6 +95,18 @@ export function OrderManagement({ projectId }: Props) {
     setFilters({ dateFrom: '', dateTo: '', source: '', customer: '', product: '', tracking: '', status: '' });
   };
 
+  // ================= TẠO BẢNG MỚI =================
+  const handleAddNewSheet = () => {
+    const sheetName = prompt('Nhập tên Bảng quản lý mới (VD: Đơn Tháng 3, Team A...):');
+    if (sheetName && sheetName.trim()) {
+      const cleanName = sheetName.trim();
+      if (!allSheets.includes(cleanName)) {
+        setLocalNewSheets([...localNewSheets, cleanName]);
+      }
+      setActiveSheet(cleanName);
+    }
+  };
+
   // ================= XỬ LÝ THÊM MỚI (MODAL) =================
   useEffect(() => {
     setAddFormData(prev => ({ ...prev, total: prev.quantity * prev.price }));
@@ -98,7 +115,8 @@ export function OrderManagement({ projectId }: Props) {
   const handleSaveAdd = async () => {
     if (!addFormData.customerInfo.trim() || !canEdit) return;
     setIsSavingAdd(true);
-    const newOrder = await insertOrder({ projectId, ...addFormData });
+    // Lưu đơn kèm theo tên bảng đang chọn
+    const newOrder = await insertOrder({ projectId, sheetName: activeSheet, ...addFormData });
     if (newOrder) {
       setOrders([newOrder, ...orders]);
       setShowAddModal(false);
@@ -165,8 +183,11 @@ export function OrderManagement({ projectId }: Props) {
     }
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, `Quan_Ly_Don_Hang`);
-    XLSX.writeFile(workbook, `Danh_Sach_Don_Hang.xlsx`);
+    
+    // Tên sheet trong file excel (giới hạn 31 ký tự)
+    const validSheetName = activeSheet.substring(0, 31).replace(/[\\/?*\[\]]/g, '_');
+    XLSX.utils.book_append_sheet(workbook, worksheet, validSheetName);
+    XLSX.writeFile(workbook, `Danh_Sach_Don_${validSheetName}.xlsx`);
   };
 
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,8 +228,11 @@ export function OrderManagement({ projectId }: Props) {
           headers.forEach((h, index) => { if (h) row[h] = rowArray[index]; });
 
           if (row['tên khách hàng']) {
+            // Lưu dữ liệu đẩy thẳng vào Bảng đang kích hoạt (activeSheet)
             await insertOrder({
-              projectId, orderDate: parseDate(row['ngày']), source: row['nguồn'] ? String(row['nguồn']) : '',
+              projectId, 
+              sheetName: activeSheet,
+              orderDate: parseDate(row['ngày']), source: row['nguồn'] ? String(row['nguồn']) : '',
               customerInfo: String(row['tên khách hàng']), address: row['địa chỉ'] ? String(row['địa chỉ']) : '',
               productName: row['tên sp'] || row['tên sản phẩm'] ? String(row['tên sp'] || row['tên sản phẩm']) : '',
               quantity: parseNumber(row['số lượng']) || 1, price: parseNumber(row['giá bán']) || 0, total: parseNumber(row['tổng đơn']) || 0,
@@ -220,7 +244,7 @@ export function OrderManagement({ projectId }: Props) {
             successCount++;
           }
         }
-        alert(`✅ Đã nhập thành công ${successCount} đơn hàng!`);
+        alert(`✅ Đã nhập thành công ${successCount} đơn hàng vào ${activeSheet}!`);
         loadOrders();
       } catch (error) { alert('❌ Lỗi định dạng file!'); } 
       finally { setIsImporting(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
@@ -235,13 +259,40 @@ export function OrderManagement({ projectId }: Props) {
   return (
     <div className="flex flex-col h-[calc(100vh-100px)] space-y-4 w-full">
       
+      {/* THIẾT KẾ CÁC TAB / BẢNG (SHEETS) */}
+      <div className="flex-none bg-white rounded-t-2xl shadow-sm border border-gray-100 px-4 pt-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <LayoutPanelLeft className="w-5 h-5 text-gray-400 mr-2 shrink-0" />
+        {allSheets.map(sheet => (
+          <button
+            key={sheet}
+            onClick={() => setActiveSheet(sheet)}
+            className={`px-5 py-2.5 rounded-t-xl font-semibold text-sm whitespace-nowrap transition-all border-b-2 ${
+              activeSheet === sheet 
+              ? 'bg-indigo-50/80 text-indigo-700 border-indigo-600' 
+              : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50 border-transparent'
+            }`}
+          >
+            {sheet}
+          </button>
+        ))}
+        {canEdit && (
+          <button 
+            onClick={handleAddNewSheet} 
+            className="p-2 ml-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors shrink-0"
+            title="Tạo bảng/tab mới"
+          >
+            <Plus className="w-5 h-5"/>
+          </button>
+        )}
+      </div>
+
       {/* HEADER & TOP CONTROLS */}
-      <div className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex-none flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-b-2xl shadow-sm border border-gray-100 mt-0">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <ShoppingBag className="w-7 h-7 text-indigo-600" /> Quản Lý Đơn Hàng
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            Đang mở: <span className="text-indigo-600">{activeSheet}</span>
           </h2>
-          <p className="text-sm text-gray-500 mt-1">Đang hiển thị {filteredOrders.length} đơn</p>
+          <p className="text-sm text-gray-500 mt-1">Tìm thấy {filteredOrders.length} đơn hàng trong bảng này</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
@@ -260,7 +311,7 @@ export function OrderManagement({ projectId }: Props) {
               <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls, .csv" className="hidden" />
               
               <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-5 py-2 rounded-xl hover:from-indigo-700 hover:to-blue-700 font-medium shadow-md transition-all">
-                <Plus className="w-4 h-4" /> Thêm Mới
+                <Plus className="w-4 h-4" /> Thêm Đơn
               </button>
             </>
           )}
@@ -292,7 +343,7 @@ export function OrderManagement({ projectId }: Props) {
         </div>
       )}
 
-      {/* KHUNG BẢNG CHÍNH - Thu hẹp padding và kích thước cột để vừa màn hình rộng */}
+      {/* KHUNG BẢNG CHÍNH */}
       <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex flex-col w-full">
         <div className="flex-1 overflow-auto relative w-full">
           <table className="w-full text-sm text-left whitespace-nowrap min-w-max">
@@ -316,7 +367,7 @@ export function OrderManagement({ projectId }: Props) {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredOrders.length === 0 ? (
-                <tr><td colSpan={14} className="px-4 py-12 text-center text-gray-500 font-medium">Không tìm thấy đơn hàng nào phù hợp.</td></tr>
+                <tr><td colSpan={14} className="px-4 py-12 text-center text-gray-500 font-medium">Bảng này hiện chưa có đơn hàng nào.</td></tr>
               ) : filteredOrders.map((order, index) => {
                 const isEditing = editingRowId === order.id;
                 const isSelected = selectedRowId === order.id;
@@ -332,7 +383,6 @@ export function OrderManagement({ projectId }: Props) {
                   >
                     <td className="px-2 py-2 text-center text-gray-400 border-r border-gray-100">{index + 1}</td>
                     
-                    {/* EDIT MODE */}
                     {isEditing ? (
                       <>
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'orderDate'} type="date" value={editFormData.orderDate || ''} onChange={e => setEditFormData({...editFormData, orderDate: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" /></td>
@@ -354,7 +404,6 @@ export function OrderManagement({ projectId }: Props) {
                         <td className="px-1 py-1 border-r border-gray-100"><input autoFocus={focusedField === 'notes'} type="text" value={editFormData.notes || ''} onChange={e => setEditFormData({...editFormData, notes: e.target.value})} className="w-full border border-gray-300 rounded p-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Ghi chú"/></td>
                       </>
                     ) : (
-                      /* VIEW MODE: Click đúp vào ô bật sửa và Focus thẳng */
                       <>
                         <td onDoubleClick={() => startInlineEdit(order, 'orderDate')} className="px-2 py-2 text-gray-700 border-r border-gray-100">{order.orderDate}</td>
                         <td onDoubleClick={() => startInlineEdit(order, 'source')} className="px-2 py-2 text-gray-500 truncate max-w-[120px] border-r border-gray-100" title={order.source}>{order.source}</td>
@@ -386,7 +435,6 @@ export function OrderManagement({ projectId }: Props) {
                       </>
                     )}
 
-                    {/* ACTIONS CỘT CUỐI */}
                     {(canEdit || canDelete) && (
                       <td className={`px-2 py-2 text-center sticky right-0 shadow-[-5px_0_10px_rgba(0,0,0,0.03)] border-l border-gray-200 ${isEditing ? 'bg-yellow-50' : isSelected ? 'bg-indigo-50/90' : 'bg-white'}`}>
                         {isEditing ? (
@@ -410,13 +458,13 @@ export function OrderManagement({ projectId }: Props) {
         </div>
       </div>
 
-      {/* MODAL THÊM ĐƠN HÀNG MỚI (Giữ nguyên giao diện đẹp) */}
+      {/* MODAL THÊM ĐƠN HÀNG MỚI */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-blue-50">
               <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
-                <Plus className="w-6 h-6 text-indigo-600" /> Thêm Đơn Hàng Mới
+                <Plus className="w-6 h-6 text-indigo-600" /> Thêm Đơn Vào: {activeSheet}
               </h3>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-red-500 bg-white p-1.5 rounded-full shadow-sm hover:bg-red-50 transition-colors"><X className="w-5 h-5" /></button>
             </div>
