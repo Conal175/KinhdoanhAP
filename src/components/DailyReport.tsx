@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Calendar, Plus, Edit2, Trash2, ChevronDown, ChevronRight, 
   TrendingUp, AlertTriangle, Zap, X, Save, DollarSign, Eye,
   MousePointer, MessageCircle, ShoppingCart, Receipt, BarChart3,
-  Link as LinkIcon, ExternalLink, Loader2
+  Link as LinkIcon, ExternalLink, Loader2, Download, Upload
 } from 'lucide-react';
+import * as XLSX from 'xlsx'; // Import thư viện Excel
 import { DailyLog } from '../types';
 import { fetchDailyLogs, insertDailyLog, updateDailyLog, deleteDailyLog } from '../store';
 import { useAuth } from '../contexts/AuthContext'; 
@@ -14,7 +15,6 @@ interface DailyReportProps {
 }
 
 const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
-  // Thay thế useSyncData bằng State thuần túy
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -27,14 +27,16 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   const [expandedDays, setExpandedDays] = useState<number[]>([new Date().getDate()]);
   const [editingLog, setEditingLog] = useState<DailyLog | null>(null);
   const [isAdding, setIsAdding] = useState<number | null>(null);
-  const [isSaving, setIsSaving] = useState(false); // Trạng thái đang lưu
+  const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [formData, setFormData] = useState({
     adName: '', adLink: '', spend: 0, impressions: 0, clicks: 0,
     messages: 0, orders: 0, revenue: 0, issues: '', optimizations: ''
   });
 
-  // Load dữ liệu lần đầu bằng API mới
   useEffect(() => {
     loadLogs();
   }, [projectId]);
@@ -91,24 +93,19 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
     });
   };
 
-  // HÀM LƯU MỚI: Tối ưu hiệu năng
   const handleSave = async (day: number) => {
     if (!formData.adName.trim() || !canEdit || isSaving) return;
     setIsSaving(true);
 
     if (editingLog) {
-      // 1. Gửi lệnh Update 1 dòng duy nhất lên Database
       const success = await updateDailyLog(editingLog.id, formData);
       if (success) {
-        // 2. Cập nhật state giao diện ngay lập tức nếu thành công
         setLogs(logs.map(l => l.id === editingLog.id ? { ...l, ...formData } : l));
       }
     } else {
-      // 1. Gửi lệnh Insert 1 dòng duy nhất lên Database
       const newLogData = { projectId, day, month: selectedMonth, year: selectedYear, ...formData };
       const insertedLog = await insertDailyLog(newLogData);
       if (insertedLog) {
-        // 2. Nối thêm dữ liệu thật từ DB (có sẵn ID chuẩn) vào state giao diện
         setLogs([...logs, insertedLog]);
       }
     }
@@ -119,7 +116,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
     resetForm();
   };
 
-  // HÀM XÓA MỚI
   const handleDelete = async (logId: string) => {
     if (!canDelete) return;
     if (confirm('Bạn có chắc muốn xóa báo cáo này?')) {
@@ -128,6 +124,114 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
         setLogs(logs.filter(l => l.id !== logId));
       }
     }
+  };
+
+  // ==========================================
+  // XỬ LÝ NHẬP / XUẤT EXCEL
+  // ==========================================
+  const handleExportExcel = () => {
+    // Lấy dữ liệu của tháng hiện tại
+    const currentMonthLogs = logs.filter(l => l.month === selectedMonth && l.year === selectedYear);
+    
+    // Tạo cấu trúc dữ liệu cho Excel
+    const exportData = currentMonthLogs.map(log => ({
+      'Ngày': log.day,
+      'Tháng': log.month,
+      'Năm': log.year,
+      'Tên bài QC': log.adName,
+      'Link QC': log.adLink || '',
+      'Ngân sách (VNĐ)': log.spend,
+      'Hiển thị': log.impressions,
+      'Clicks': log.clicks,
+      'Tin nhắn': log.messages,
+      'Đơn hàng': log.orders,
+      'Doanh thu (VNĐ)': log.revenue,
+      'Vấn đề phát sinh': log.issues || '',
+      'Hành động tối ưu': log.optimizations || ''
+    }));
+
+    // Nếu chưa có dữ liệu, tạo một dòng mẫu rỗng để người dùng biết cách điền
+    if (exportData.length === 0) {
+      exportData.push({
+        'Ngày': new Date().getDate(),
+        'Tháng': selectedMonth,
+        'Năm': selectedYear,
+        'Tên bài QC': 'Mẫu bài QC 1',
+        'Link QC': 'https://...',
+        'Ngân sách (VNĐ)': 0,
+        'Hiển thị': 0,
+        'Clicks': 0,
+        'Tin nhắn': 0,
+        'Đơn hàng': 0,
+        'Doanh thu (VNĐ)': 0,
+        'Vấn đề phát sinh': '',
+        'Hành động tối ưu': ''
+      });
+    }
+
+    // Khởi tạo file Excel và tải xuống
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Thang_${selectedMonth}`);
+    XLSX.writeFile(workbook, `Bao_Cao_Thang_${selectedMonth}_${selectedYear}.xlsx`);
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !canEdit) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const binaryStr = evt.target?.result;
+        const workbook = XLSX.read(binaryStr, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0]; // Lấy sheet đầu tiên
+        const worksheet = workbook.Sheets[sheetName];
+        
+        // Chuyển sheet thành mảng JSON
+        const data = XLSX.utils.sheet_to_json(worksheet);
+        let successCount = 0;
+
+        for (const row of data as any[]) {
+          // Chỉ thêm nếu có Tên bài QC
+          if (row['Tên bài QC']) {
+            const newLog = {
+              projectId,
+              day: Number(row['Ngày']) || new Date().getDate(),
+              month: Number(row['Tháng']) || selectedMonth,
+              year: Number(row['Năm']) || selectedYear,
+              adName: String(row['Tên bài QC']),
+              adLink: row['Link QC'] ? String(row['Link QC']) : '',
+              spend: Number(row['Ngân sách (VNĐ)']) || 0,
+              impressions: Number(row['Hiển thị']) || 0,
+              clicks: Number(row['Clicks']) || 0,
+              messages: Number(row['Tin nhắn']) || 0,
+              orders: Number(row['Đơn hàng']) || 0,
+              revenue: Number(row['Doanh thu (VNĐ)']) || 0,
+              issues: row['Vấn đề phát sinh'] ? String(row['Vấn đề phát sinh']) : '',
+              optimizations: row['Hành động tối ưu'] ? String(row['Hành động tối ưu']) : ''
+            };
+            
+            await insertDailyLog(newLog);
+            successCount++;
+          }
+        }
+
+        alert(`✅ Đã nhập thành công ${successCount} dòng dữ liệu từ Excel!`);
+        loadLogs(); // Tải lại danh sách báo cáo
+      } catch (error) {
+        console.error("Lỗi đọc file Excel:", error);
+        alert('❌ Đã xảy ra lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng file!');
+      } finally {
+        setIsImporting(false);
+        // Reset input để có thể tải lại cùng 1 file
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+
+    reader.readAsBinaryString(file);
   };
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN').format(value);
@@ -204,16 +308,53 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><BarChart3 className="w-7 h-7 text-indigo-600" /> Báo Cáo & Nhật Ký Vận Hành</h2>
           <p className="text-gray-500 mt-1">Theo dõi hiệu quả quảng cáo hàng ngày</p>
         </div>
-        <div className="flex items-center gap-2">
-          <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Cụm chức năng Excel */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 p-1.5 rounded-xl shadow-sm">
+            <button 
+              onClick={handleExportExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50 rounded-lg transition-colors"
+              title="Tải xuống file mẫu hoặc dữ liệu tháng này"
+            >
+              <Download className="w-4 h-4" /> Xuất Excel
+            </button>
+            
+            {canEdit && (
+              <>
+                <div className="w-px h-5 bg-gray-200 mx-1"></div>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isImporting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                  title="Nhập dữ liệu hàng loạt từ file mẫu"
+                >
+                  {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} 
+                  {isImporting ? 'Đang tải...' : 'Nhập Excel'}
+                </button>
+                {/* Input ẩn dùng để mở hộp thoại chọn file */}
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleImportExcel} 
+                  accept=".xlsx, .xls" 
+                  className="hidden" 
+                />
+              </>
+            )}
+          </div>
+
+          <div className="h-8 w-px bg-gray-300 hidden md:block"></div>
+
+          {/* Chọn tháng/năm */}
+          <select value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))} className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium">
             {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>Tháng {i + 1}</option>)}
           </select>
-          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+          <select value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))} className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 font-medium">
             {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
