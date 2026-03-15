@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Plus, Edit2, Trash2, ChevronDown, ChevronRight, 
   TrendingUp, AlertTriangle, Zap, X, Save, DollarSign, Eye,
@@ -6,18 +6,19 @@ import {
   Link as LinkIcon, ExternalLink, Loader2
 } from 'lucide-react';
 import { DailyLog } from '../types';
-import { useSyncData } from '../store';
-import { useAuth } from '../contexts/AuthContext'; // Thêm Import hook phân quyền
+import { fetchDailyLogs, insertDailyLog, updateDailyLog, deleteDailyLog } from '../store';
+import { useAuth } from '../contexts/AuthContext'; 
 
 interface DailyReportProps {
   projectId: string;
 }
 
 const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
-  const { data: logs, syncData: setLogs, loading } = useSyncData<DailyLog>(projectId, 'dailyLogs', []);
-  const { checkPermission } = useAuth(); // Lấy hàm kiểm tra quyền
+  // Thay thế useSyncData bằng State thuần túy
+  const [logs, setLogs] = useState<DailyLog[]>([]);
+  const [loading, setLoading] = useState(true);
   
-  // Xác định quyền Thêm/Sửa và Xóa của user hiện tại cho module Báo cáo
+  const { checkPermission } = useAuth(); 
   const canEdit = checkPermission('daily_report', 'edit');
   const canDelete = checkPermission('daily_report', 'delete');
 
@@ -26,11 +27,24 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   const [expandedDays, setExpandedDays] = useState<number[]>([new Date().getDate()]);
   const [editingLog, setEditingLog] = useState<DailyLog | null>(null);
   const [isAdding, setIsAdding] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false); // Trạng thái đang lưu
   
   const [formData, setFormData] = useState({
     adName: '', adLink: '', spend: 0, impressions: 0, clicks: 0,
     messages: 0, orders: 0, revenue: 0, issues: '', optimizations: ''
   });
+
+  // Load dữ liệu lần đầu bằng API mới
+  useEffect(() => {
+    loadLogs();
+  }, [projectId]);
+
+  const loadLogs = async () => {
+    setLoading(true);
+    const data = await fetchDailyLogs(projectId);
+    setLogs(data);
+    setLoading(false);
+  };
 
   const getLogsForDay = (day: number) => {
     return logs.filter(l => l.day === day && l.month === selectedMonth && l.year === selectedYear);
@@ -61,14 +75,14 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
   };
 
   const handleAddLog = (day: number) => {
-    if (!canEdit) return; // Bảo mật 2 lớp
+    if (!canEdit) return;
     setIsAdding(day);
     setEditingLog(null);
     resetForm();
   };
 
   const handleEditLog = (log: DailyLog) => {
-    if (!canEdit) return; // Bảo mật 2 lớp
+    if (!canEdit) return;
     setEditingLog(log);
     setIsAdding(null);
     setFormData({
@@ -77,27 +91,42 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
     });
   };
 
+  // HÀM LƯU MỚI: Tối ưu hiệu năng
   const handleSave = async (day: number) => {
-    if (!formData.adName.trim() || !canEdit) return;
+    if (!formData.adName.trim() || !canEdit || isSaving) return;
+    setIsSaving(true);
 
     if (editingLog) {
-      const updated = logs.map(l => l.id === editingLog.id ? { ...l, ...formData } : l);
-      await setLogs(updated);
+      // 1. Gửi lệnh Update 1 dòng duy nhất lên Database
+      const success = await updateDailyLog(editingLog.id, formData);
+      if (success) {
+        // 2. Cập nhật state giao diện ngay lập tức nếu thành công
+        setLogs(logs.map(l => l.id === editingLog.id ? { ...l, ...formData } : l));
+      }
     } else {
-      const newLog: DailyLog = {
-        id: Date.now().toString(), projectId, day, month: selectedMonth, year: selectedYear, ...formData
-      };
-      await setLogs([...logs, newLog]);
+      // 1. Gửi lệnh Insert 1 dòng duy nhất lên Database
+      const newLogData = { projectId, day, month: selectedMonth, year: selectedYear, ...formData };
+      const insertedLog = await insertDailyLog(newLogData);
+      if (insertedLog) {
+        // 2. Nối thêm dữ liệu thật từ DB (có sẵn ID chuẩn) vào state giao diện
+        setLogs([...logs, insertedLog]);
+      }
     }
+    
+    setIsSaving(false);
     setIsAdding(null);
     setEditingLog(null);
     resetForm();
   };
 
+  // HÀM XÓA MỚI
   const handleDelete = async (logId: string) => {
-    if (!canDelete) return; // Bảo mật 2 lớp
+    if (!canDelete) return;
     if (confirm('Bạn có chắc muốn xóa báo cáo này?')) {
-      await setLogs(logs.filter(l => l.id !== logId));
+      const success = await deleteDailyLog(logId);
+      if (success) {
+        setLogs(logs.filter(l => l.id !== logId));
+      }
     }
   };
 
@@ -232,7 +261,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                     <span className="text-purple-600">{daySummary.messages} msg</span>
                   </div>
                 )}
-                {/* HIỂN THỊ NÚT THÊM NẾU CÓ QUYỀN */}
                 {canEdit && (
                   <button onClick={(e) => { e.stopPropagation(); handleAddLog(day); }} className="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 ml-2 shrink-0"><Plus className="w-4 h-4" /></button>
                 )}
@@ -246,7 +274,10 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                       {renderFormFields('indigo')}
                       <div className="flex justify-end gap-2 mt-4">
                         <button onClick={() => { setIsAdding(null); resetForm(); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4 inline mr-1" /> Hủy</button>
-                        <button onClick={() => handleSave(day)} disabled={!formData.adName.trim()} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"><Save className="w-4 h-4 inline mr-1" /> Lưu báo cáo</button>
+                        <button onClick={() => handleSave(day)} disabled={!formData.adName.trim() || isSaving} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                          {isSaving ? <Loader2 className="w-4 h-4 inline mr-1 animate-spin" /> : <Save className="w-4 h-4 inline mr-1" />}
+                          {isSaving ? 'Đang lưu...' : 'Lưu báo cáo'}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -257,7 +288,10 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                       {renderFormFields('amber')}
                       <div className="flex justify-end gap-2 mt-4">
                         <button onClick={() => { setEditingLog(null); resetForm(); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4 inline mr-1" /> Hủy</button>
-                        <button onClick={() => handleSave(day)} disabled={!formData.adName.trim()} className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"><Save className="w-4 h-4 inline mr-1" /> Cập nhật</button>
+                        <button onClick={() => handleSave(day)} disabled={!formData.adName.trim() || isSaving} className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                          {isSaving ? <Loader2 className="w-4 h-4 inline mr-1 animate-spin" /> : <Save className="w-4 h-4 inline mr-1" />}
+                          {isSaving ? 'Đang lưu...' : 'Cập nhật'}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -278,7 +312,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                             <th className="px-3 py-2 text-right font-semibold text-gray-600 whitespace-nowrap">Tỷ lệ chốt</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Vấn đề</th>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600 whitespace-nowrap">Hành động</th>
-                            {/* Chẩn Cột Thao tác */}
                             {(canEdit || canDelete) && (
                               <th className="px-3 py-2 text-center font-semibold text-gray-600 whitespace-nowrap">Thao tác</th>
                             )}
@@ -298,8 +331,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                               <td className="px-3 py-2.5 text-right text-green-600 font-medium">{formatPercent(calculateCR(log.orders, log.messages))}</td>
                               <td className="px-3 py-2.5 max-w-[150px]">{log.issues && <div className="bg-red-50 text-red-700 px-2 py-1 rounded text-xs">{log.issues}</div>}</td>
                               <td className="px-3 py-2.5 max-w-[150px]">{log.optimizations && <div className="bg-green-50 text-green-700 px-2 py-1 rounded text-xs">{log.optimizations}</div>}</td>
-                              
-                              {/* ẨN/HIỆN NÚT SỬA XÓA TÙY QUYỀN */}
                               {(canEdit || canDelete) && (
                                 <td className="px-3 py-2.5">
                                   <div className="flex items-center justify-center gap-1">
@@ -332,7 +363,6 @@ const DailyReport: React.FC<DailyReportProps> = ({ projectId }) => {
                       <div className="p-8 text-center text-gray-400">
                         <TrendingUp className="w-10 h-10 mx-auto mb-2 opacity-50" />
                         <p>Chưa có báo cáo cho ngày này</p>
-                        {/* ẨN NÚT THÊM NẾU KHÔNG CÓ QUYỀN */}
                         {canEdit && (
                           <button onClick={() => handleAddLog(day)} className="mt-2 text-indigo-600 font-medium">+ Thêm báo cáo đầu tiên</button>
                         )}
