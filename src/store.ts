@@ -263,3 +263,99 @@ export const deleteDailyLog = async (id: string): Promise<boolean> => {
   }
   return true;
 };
+// ==========================================
+// 5. API CHO BẢNG ORDERS (QUẢN LÝ ĐƠN HÀNG)
+// ==========================================
+export interface Order {
+  id: string;
+  projectId: string;
+  orderDate: string;
+  source: string;
+  customerInfo: string;
+  address: string;
+  productName: string;
+  quantity: number;
+  price: number;
+  total: number;
+  notes: string;
+  shippingDate: string;
+  trackingCode: string;
+  status: string;
+  shippingFee: number;
+}
+
+export const fetchOrders = async (projectId: string): Promise<Order[]> => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('order_date', { ascending: false });
+
+  if (error) return [];
+
+  return data.map(d => ({
+    id: d.id, projectId: d.project_id,
+    orderDate: d.order_date || '', source: d.source || '',
+    customerInfo: d.customer_info || '', address: d.address || '',
+    productName: d.product_name || '', quantity: Number(d.quantity),
+    price: Number(d.price), total: Number(d.total),
+    notes: d.notes || '', shippingDate: d.shipping_date || '',
+    trackingCode: d.tracking_code || '', status: d.status || '',
+    shippingFee: Number(d.shipping_fee)
+  }));
+};
+
+export const insertOrder = async (order: Omit<Order, 'id'>): Promise<Order | null> => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('orders').insert([{
+    project_id: order.projectId, order_date: order.orderDate || null,
+    source: order.source, customer_info: order.customerInfo,
+    address: order.address, product_name: order.productName,
+    quantity: order.quantity, price: order.price, total: order.total,
+    notes: order.notes, shipping_date: order.shippingDate || null,
+    tracking_code: order.trackingCode, status: order.status, shipping_fee: order.shippingFee
+  }]).select().single();
+
+  if (error) { alert(`Lỗi thêm đơn: ${error.message}`); return null; }
+  
+  return {
+    id: data.id, projectId: data.project_id, orderDate: data.order_date || '',
+    source: data.source || '', customerInfo: data.customer_info || '', address: data.address || '',
+    productName: data.product_name || '', quantity: Number(data.quantity), price: Number(data.price),
+    total: Number(data.total), notes: data.notes || '', shippingDate: data.shipping_date || '',
+    trackingCode: data.tracking_code || '', status: data.status || '', shippingFee: Number(data.shipping_fee)
+  };
+};
+
+export const updateOrder = async (id: string, order: Partial<Order>): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  
+  const updates: any = {};
+  if (order.orderDate !== undefined) updates.order_date = order.orderDate || null;
+  if (order.source !== undefined) updates.source = order.source;
+  if (order.customerInfo !== undefined) updates.customer_info = order.customerInfo;
+  if (order.address !== undefined) updates.address = order.address;
+  if (order.productName !== undefined) updates.product_name = order.productName;
+  if (order.quantity !== undefined) updates.quantity = order.quantity;
+  if (order.price !== undefined) updates.price = order.price;
+  if (order.total !== undefined) updates.total = order.total;
+  if (order.notes !== undefined) updates.notes = order.notes;
+  if (order.shippingDate !== undefined) updates.shipping_date = order.shippingDate || null;
+  if (order.trackingCode !== undefined) updates.tracking_code = order.trackingCode;
+  if (order.status !== undefined) updates.status = order.status;
+  if (order.shippingFee !== undefined) updates.shipping_fee = order.shippingFee;
+
+  const { error } = await supabase.from('orders').update(updates).eq('id', id);
+  return !error;
+};
+
+export const deleteOrder = async (id: string): Promise<boolean> => {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  const { error } = await supabase.from('orders').delete().eq('id', id);
+  return !error;
+};
