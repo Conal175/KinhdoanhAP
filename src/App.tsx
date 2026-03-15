@@ -68,7 +68,6 @@ function MainApp() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', description: '' });
 
-  // Load Projects from Supabase on init
   useEffect(() => {
     fetchProjects().then(data => {
       setProjects(data);
@@ -373,14 +372,13 @@ function MainApp() {
     );
   }
 
-  // ======= PROJECT DETAIL VIEW =======
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50 flex overflow-hidden">
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <aside className={`fixed lg:sticky top-0 left-0 h-screen w-72 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:sticky top-0 left-0 h-screen w-72 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 flex flex-col shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-5 border-b border-gray-100">
           <button
             onClick={() => { setActiveProjectId(null); setSidebarOpen(false); setActiveTab('dashboard'); }}
@@ -550,8 +548,8 @@ function MainApp() {
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0">
-        <header className="lg:hidden bg-white border-b border-gray-200 sticky top-0 z-30 px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
+        <header className="lg:hidden bg-white border-b border-gray-200 shrink-0 z-30 px-4 py-3 flex items-center gap-3">
           <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-gray-100 rounded-lg">
             <Menu className="w-5 h-5 text-gray-600" />
           </button>
@@ -572,7 +570,8 @@ function MainApp() {
           </button>
         </header>
 
-        <main className="p-4 sm:p-6 lg:p-8 max-w-7xl">
+        {/* Đã xóa max-w-7xl, cho phép phần nội dung bung kín màn hình ngang */}
+        <main className="flex-1 overflow-auto p-4 sm:p-6 w-full">
           {activeTab === 'dashboard' && auth.checkPermission('dashboard', 'view') && <Dashboard project={activeProject} />}
           {activeTab === 'orders' && auth.checkPermission('orders', 'view') && <OrderManagement projectId={activeProject.id} />}
           {activeTab === 'action-plan' && auth.checkPermission('action_plan', 'view') && <ActionPlan project={activeProject} />}
