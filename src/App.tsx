@@ -13,13 +13,15 @@ import { CustomerStrategy } from './components/CustomerStrategy';
 import { CompetitorStrategy } from './components/CompetitorStrategy';
 import DailyReport from './components/DailyReport';
 import { MediaResources } from './components/MediaResources';
+import { OrderManagement } from './components/OrderManagement';
 import {
   LayoutDashboard, ListTodo, Lightbulb, BarChart3, Image, Plus,
   ArrowLeft, FolderOpen, Trash2, Menu, X, ChevronDown, ChevronRight,
   Package, Users, Swords, LogOut, UserCog, Shield, ShieldCheck, Crown, Eye,
+  ShoppingBag
 } from 'lucide-react';
 
-type TabKey = 'dashboard' | 'action-plan' | 'strategy-products' | 'strategy-customers' | 'strategy-competitors' | 'daily-report' | 'media' | 'admin';
+type TabKey = 'dashboard' | 'orders' | 'action-plan' | 'strategy-products' | 'strategy-customers' | 'strategy-competitors' | 'daily-report' | 'media' | 'admin';
 
 const ROLE_LABELS: Record<string, { label: string; color: string; bg: string; icon: typeof Crown }> = {
   admin: { label: 'Admin', color: 'text-red-600', bg: 'bg-red-50 border-red-200', icon: Crown },
@@ -117,6 +119,7 @@ function MainApp() {
   const getTabLabel = (tab: TabKey) => {
     switch (tab) {
       case 'dashboard': return 'Dashboard';
+      case 'orders': return 'Quản Lý Đơn Hàng';
       case 'action-plan': return 'Action Plan';
       case 'strategy-products': return 'Chi Tiết Sản Phẩm';
       case 'strategy-customers': return 'Chân Dung Khách Hàng';
@@ -146,7 +149,6 @@ function MainApp() {
   if (!activeProject) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
-        {/* Header */}
         <header className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -265,7 +267,7 @@ function MainApp() {
                         <input
                           value={createForm.name}
                           onChange={e => setCreateForm({ ...createForm, name: e.target.value })}
-                          placeholder="VD: Campaign Máy Bơm Q3/2025"
+                          placeholder="VD: Campaign Máy Bơm Q3/2026"
                           className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-lg"
                           autoFocus
                         />
@@ -307,7 +309,7 @@ function MainApp() {
                   <h2 className="text-2xl font-bold text-gray-700 mb-2">Chào mừng, {userName}!</h2>
                   <p className="text-gray-500 max-w-md mx-auto mb-8">
                     {auth.canManage
-                      ? 'Bắt đầu bằng việc tạo dự án marketing đầu tiên.'
+                      ? 'Bắt đầu bằng việc tạo dự án đầu tiên.'
                       : 'Hiện chưa có dự án nào. Liên hệ quản lý để được thêm vào dự án.'}
                   </p>
                   {auth.canManage && (
@@ -402,6 +404,15 @@ function MainApp() {
             </button>
           )}
 
+          {auth.checkPermission('orders', 'view') && (
+            <button
+              onClick={() => handleTabClick('orders')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'orders' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <ShoppingBag className="w-5 h-5" /> Quản Lý Đơn Hàng
+            </button>
+          )}
+
           {auth.checkPermission('action_plan', 'view') && (
             <button
               onClick={() => handleTabClick('action-plan')}
@@ -460,7 +471,7 @@ function MainApp() {
               onClick={() => handleTabClick('daily-report')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${activeTab === 'daily-report' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <BarChart3 className="w-5 h-5" /> Báo Cáo
+              <BarChart3 className="w-5 h-5" /> Báo Cáo Doanh Thu
             </button>
           )}
 
@@ -563,6 +574,7 @@ function MainApp() {
 
         <main className="p-4 sm:p-6 lg:p-8 max-w-7xl">
           {activeTab === 'dashboard' && auth.checkPermission('dashboard', 'view') && <Dashboard project={activeProject} />}
+          {activeTab === 'orders' && auth.checkPermission('orders', 'view') && <OrderManagement projectId={activeProject.id} />}
           {activeTab === 'action-plan' && auth.checkPermission('action_plan', 'view') && <ActionPlan project={activeProject} />}
           {activeTab === 'strategy-products' && auth.checkPermission('strategy_product', 'view') && (
             <ProductStrategy
