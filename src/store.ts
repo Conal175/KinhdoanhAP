@@ -372,11 +372,14 @@ export const deleteOrdersBySheet = async (projectId: string, sheetName: string):
   const supabase = getSupabase();
   if (!supabase) return false;
   
-  const { error } = await supabase
-    .from('orders')
-    .delete()
-    .eq('project_id', projectId)
-    .eq('sheet_name', sheetName);
+  let query = supabase.from('orders').delete().eq('project_id', projectId);
+  
+  // Nếu lệnh truyền vào không phải là ALL_SHEETS, thì chỉ xóa bảng được chỉ định
+  if (sheetName !== 'ALL_SHEETS') {
+    query = query.eq('sheet_name', sheetName);
+  }
+
+  const { error } = await query;
 
   if (error) {
     alert(`Lỗi xóa bảng: ${error.message}`);
