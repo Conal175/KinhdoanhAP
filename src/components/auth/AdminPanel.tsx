@@ -4,12 +4,14 @@ import { useAuth, UserWithRole, UserRole, PermissionMatrix } from '../../context
 // ĐÃ CẬP NHẬT: Bổ sung 'action_plan' và 'media' vào danh sách Module
 const APP_MODULES = [
   { id: 'dashboard', name: 'Dashboard' },
+  { id: 'orders', name: 'Quản lý Đơn hàng' },
   { id: 'action_plan', name: 'Action Plan' },
   { id: 'strategy_product', name: 'Chiến lược Sản phẩm' },
   { id: 'strategy_customer', name: 'Chiến lược Khách hàng' },
   { id: 'competitors', name: 'Phân tích Đối thủ' },
   { id: 'daily_report', name: 'Báo cáo Hàng ngày' },
   { id: 'media', name: 'Media' },
+  
 ];
 
 export function AdminPanel() {
